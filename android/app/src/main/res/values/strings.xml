@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kelime Savaşı</string>
+    <string name="title_activity_main">Kelime Savaşı</string>
+    <string name="package_name">com.kelimesavasi.app</string>
+    <string name="custom_url_scheme">com.kelimesavasi.app</string>
+</resources>

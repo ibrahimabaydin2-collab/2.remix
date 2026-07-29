@@ -1,0 +1,139 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and statistics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "friends": { "type": "array" },
+        "stats": { "type": "object" },
+        "wordLengthStats": { "type": "object" }
+      },
+      "required": ["id", "name"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "An online multiplayer room for Group Race",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "hostId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "status": { "type": "string" },
+        "currentRound": { "type": "integer" },
+        "wordLength": { "type": "integer" },
+        "targetWord": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "code", "hostId", "status"]
+    },
+    "RoomPlayer": {
+      "title": "RoomPlayer",
+      "description": "A player within a specific multiplayer room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "solved": { "type": "boolean" },
+        "solvedRound": { "type": "integer" },
+        "solveTime": { "type": "integer" },
+        "currentAttempt": { "type": "integer" },
+        "attemptsFeedback": { "type": "array" },
+        "eliminated": { "type": "boolean" },
+        "score": { "type": "integer" },
+        "ready": { "type": "boolean" },
+        "joinedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "eliminated"]
+    },
+    "DictionaryWord": {
+      "title": "DictionaryWord",
+      "description": "A cached word validation and definition from TDK/Gemini",
+      "type": "object",
+      "properties": {
+        "word": { "type": "string" },
+        "valid": { "type": "boolean" },
+        "definition": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["word", "valid"]
+    },
+    "DailyPuzzleState": {
+      "title": "DailyPuzzleState",
+      "description": "Persisted attempts and status for the Daily Puzzle",
+      "type": "object",
+      "properties": {
+        "dateStr": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "attempts": { "type": "array" },
+        "solved": { "type": "boolean" },
+        "failed": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["dateStr", "attempts", "solved", "failed"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "An online multiplayer 1v1 match / duel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "isGameOver": { "type": "boolean" },
+        "winner": { "type": "string" }
+      },
+      "required": ["id", "isGameOver"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "A friend request document sent between two users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fromUid": { "type": "string" },
+        "toUid": { "type": "string" },
+        "fromName": { "type": "string" },
+        "toName": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "fromUid", "toUid", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/friend_requests/{requestId}": {
+      "schema": "FriendRequest",
+      "description": "Friend requests sent between players"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Online multiplayer rooms"
+    },
+    "/rooms/{roomId}/players/{playerId}": {
+      "schema": "RoomPlayer",
+      "description": "Players in an online multiplayer room"
+    },
+    "/dictionary/{word}": {
+      "schema": "DictionaryWord",
+      "description": "Cached word definitions and validity status"
+    },
+    "/daily_puzzles/{docId}": {
+      "schema": "DailyPuzzleState",
+      "description": "Daily puzzle persistence for exploit prevention"
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Online 1v1 duel states for instantaneous finish synchronization"
+    }
+  }
+}

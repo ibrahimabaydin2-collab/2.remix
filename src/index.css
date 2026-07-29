@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* Solid Dark Matte Theme Classes for Modals and Cards */
+.card-theme {
+  background-color: #161D2B !important;
+  color: #FAF6E9 !important;
+  opacity: 1 !important;
+}
+
+.inner-theme {
+  background-color: #101520 !important;
+  color: #FAF6E9 !important;
+  opacity: 1 !important;
+}
+
+.bg-theme {
+  background-color: #1F2633 !important;
+  opacity: 1 !important;
+}
+
+.border-theme {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* WebView & Native Interface Layout Rules */
+.android-hybrid #top-ad-placeholder,
+.android-hybrid #bottom-ad-placeholder {
+  display: none !important;
+}
+
+/* Performance and GPU acceleration optimizations for Mobile & Android WebView */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Force hardware composition layer during ad activity or in native hybrid mode */
+.android-hybrid *,
+body.ad-active * {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Disable expensive backdrop-blur on mobile and active ad states to eliminate stutter and frame drops */
+@media (max-width: 768px) {
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl,
+  .backdrop-blur-2xl {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: rgba(15, 23, 42, 0.95) !important;
+  }
+}
+
+body.ad-active .backdrop-blur-md,
+body.ad-active .backdrop-blur-lg,
+body.ad-active .backdrop-blur-xl,
+body.ad-active .backdrop-blur-2xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-color: rgba(15, 23, 42, 0.98) !important;
+}
+
+/* Ensure smooth font rendering and zero extra margin for webview alignment */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+/* Vertical centering rules for #game-area-card content across viewport height variations */
+#game-area-card {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+#game-area-card.game-ended {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin-top: auto !important;
+  margin-bottom: auto !important;
+  align-self: center !important;
+  width: 100% !important;
+}
+
+/* Landscape orientation results layout adjustment for #game-area-card */
+@media (max-width: 768px) {
+  #game-area-card {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  body:has(#bottom-ad-placeholder) #game-area-card {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .android-hybrid #game-area-card {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+@media (orientation: landscape) {
+  #game-area-card.game-ended {
+    justify-content: center !important;
+    align-items: center !important;
+    margin-top: auto !important;
+    margin-bottom: auto !important;
+    max-height: calc(100vh - 60px) !important;
+    padding-bottom: 1.5rem !important;
+    overflow-y: auto !important;
+  }
+
+  .android-hybrid #game-area-card.game-ended {
+    justify-content: center !important;
+    align-items: center !important;
+    max-height: calc(100vh - 10px) !important;
+    padding-bottom: 12px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  #game-area-card.game-ended {
+    padding-bottom: 2.25rem !important;
+    margin-bottom: 50px !important;
+    max-height: calc(100vh - 55px) !important;
+  }
+}
+

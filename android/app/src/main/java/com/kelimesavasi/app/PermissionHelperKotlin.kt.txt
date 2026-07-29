@@ -1,0 +1,121 @@
+package com.kelimesavasi.app
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+
+/**
+ * Zararsız ve Güvenli İzin Entegrasyon Yardımcısı (Kotlin Versiyonu)
+ * 
+ * Bu sınıf, Kelime Savaşı projesinde mevcut kodları ve akışları bozmadan;
+ * Galeri, Kamera, Mikrofon ve Bildirim izinlerini yönetmek için tasarlanmıştır.
+ * Modern registerForActivityResult API'sini ve Android 13/14+ kontrollerini kullanır.
+ */
+class PermissionHelperKotlin(
+    activity: ComponentActivity,
+    private val callback: (Map<String, Boolean>) -> Unit
+) {
+
+    private val permissionLauncher: ActivityResultLauncher<Array<String>> =
+        activity.registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            callback(results)
+        }
+
+    /**
+     * Belirtilen izin grubunu veya tekil izni kullanıcıdan güvenli bir şekilde talep eder.
+     */
+    fun launch(permissions: Array<String>) {
+        if (permissions.isNotEmpty()) {
+            permissionLauncher.launch(permissions)
+        }
+    }
+
+    companion object {
+        /**
+         * Kamera izninin verilip verilmediğini kontrol eder.
+         */
+        fun hasCameraPermission(context: Context): Boolean {
+            return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        }
+
+        /**
+         * Mikrofon (Ses Kaydetme) izninin verilip verilmediğini kontrol eder.
+         */
+        fun hasMicrophonePermission(context: Context): Boolean {
+            return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        }
+
+        /**
+         * Galeri (Fotoğraf Erişimi) izninin verilip verilmediğini kontrol eder.
+         */
+        fun hasGalleryPermission(context: Context): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+            } else {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+
+        /**
+         * Bildirim (POST_NOTIFICATIONS) izninin verilip verilmediğini kontrol eder.
+         */
+        fun hasNotificationPermission(context: Context): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        }
+
+        /**
+         * Kamera izni istemek için gerekli izin dizisini döner.
+         */
+        fun getCameraPermissions(): Array<String> = arrayOf(Manifest.permission.CAMERA)
+
+        /**
+         * Mikrofon izni istemek için gerekli izin dizisini döner.
+         */
+        fun getMicrophonePermissions(): Array<String> = arrayOf(Manifest.permission.RECORD_AUDIO)
+
+        /**
+         * Galeri izni istemek için gerekli izin dizisini döner.
+         */
+        fun getGalleryPermissions(): Array<String> {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+            } else {
+                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+
+        /**
+         * Bildirim izni istemek için gerekli izin dizisini döner.
+         */
+        fun getNotificationPermissions(): Array<String> {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                emptyArray()
+            }
+        }
+
+        /**
+         * Tüm izinleri (Kamera, Mikrofon, Galeri, Bildirim) bir kerede istemek için sürüm duyarlı toplu dizi hazırlar.
+         */
+        fun getAllPermissions(): Array<String> {
+            val list = mutableListOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                list.add(Manifest.permission.READ_MEDIA_IMAGES)
+                list.add(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                list.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            return list.toTypedArray()
+        }
+    }
+}

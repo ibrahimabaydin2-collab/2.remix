@@ -1,0 +1,91 @@
+name: Android APK & AAB Derleyici
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Android Derlemesi
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodu Klonla (Checkout)
+        uses: actions/checkout@v4
+
+      - name: Node.js Kurulumu
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Bağımlılıkları Yükle (npm install)
+        run: npm install
+
+      - name: Web Uygulamasını Derle (React Build)
+        run: npm run build
+
+      - name: Java 21 Kurulumu (JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          check-latest: false
+
+      - name: Capacitor Android Projesini Hazırla
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          
+          # Overwrite all PNG launcher icons and splash screens with pristine template binaries
+          # to completely bypass any potential Git line-ending or binary file corruptions on the runner.
+          echo "Restoring pristine PNG resources from Capacitor CLI template..."
+          tar -xf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android --wildcards "app/src/main/res/**/*.png"
+          
+          # Forcefully download a fresh Gradle distribution and regenerate gradle wrapper to bypass any git line ending corruption of binary files
+          echo "Downloading fresh Gradle 8.14.3 binary..."
+          wget -q https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+          unzip -q gradle-8.14.3-bin.zip
+          chmod +x gradle-8.14.3/bin/gradle
+          export PATH=$PWD/gradle-8.14.3/bin:$PATH
+          
+          echo "Regenerating gradle wrapper..."
+          cd android
+          rm -f gradle/wrapper/gradle-wrapper.jar gradlew gradlew.bat
+          gradle wrapper --gradle-version 8.14.3 --distribution-type all --no-daemon
+          cd ..
+          
+          echo "Stopping Gradle Daemon..."
+          gradle-8.14.3/bin/gradle --stop || true
+          
+          echo "Cleaning up temp Gradle download..."
+          rm -rf gradle-8.14.3 gradle-8.14.3-bin.zip
+          
+          npx cap sync android
+          chmod +x android/gradlew
+
+      - name: Debug APK Derle (Telefon için)
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Google Play için Release AAB Derle
+        run: |
+          cd android
+          ./gradlew bundleRelease
+
+      - name: APK Dosyasını Yükle (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: KelimeSavasi-Mobil-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: AAB Dosyasını Yükle (Google Play Bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: KelimeSavasi-PlayStore-AAB
+          path: android/app/build/outputs/bundle/release/app-release.aab

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0f172a"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
+
+    <!-- Header Text -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="MİSAFİR OLARAK OYNA"
+        android:textColor="#f8fafc"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.05"
+        android:gravity="center" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Lobi ve yarışlarda görünecek kullanıcı adınızı giriniz"
+        android:textColor="#94a3b8"
+        android:textSize="12sp"
+        android:gravity="center"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="48dp" />
+
+    <!-- Container for Input and Button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#1e293b"
+        android:padding="24dp"
+        android:elevation="4dp"
+        android:layout_marginHorizontal="12dp">
+
+        <!-- Nickname Input Field -->
+        <EditText
+            android:id="@+id/et_guest_nickname"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:hint="Kullanıcı adı giriniz"
+            android:textColor="#f8fafc"
+            android:textColorHint="#64748b"
+            android:backgroundTint="#475569"
+            android:inputType="text"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:layout_marginBottom="24dp"
+            android:paddingHorizontal="12dp" />
+
+        <!-- Continue Button -->
+        <Button
+            android:id="@+id/btn_guest_continue"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="DEVAM ET"
+            android:textColor="#ffffff"
+            android:backgroundTint="#3b82f6"
+            android:textStyle="bold"
+            android:letterSpacing="0.05" />
+
+    </LinearLayout>
+
+    <!-- Optional Back link -->
+    <TextView
+        android:id="@+id/tv_guest_back"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Geri Dön"
+        android:textColor="#3b82f6"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginTop="32dp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true" />
+
+</LinearLayout>

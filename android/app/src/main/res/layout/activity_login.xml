@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0f172a"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
+
+    <!-- Game Title Header -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="KELİME SAVAŞI"
+        android:textColor="#f8fafc"
+        android:textSize="36sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.05"
+        android:gravity="center" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Kelime dağarcığını yarıştır, zirveye yerleş!"
+        android:textColor="#94a3b8"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="64dp" />
+
+    <!-- Three Main Entry Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#1e293b"
+        android:padding="24dp"
+        android:elevation="4dp"
+        android:layout_marginHorizontal="12dp">
+
+        <!-- 1. Play as Guest Button -->
+        <Button
+            android:id="@+id/btn_guest_login"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="MİSAFİR OLARAK OYNA"
+            android:textColor="#ffffff"
+            android:backgroundTint="#3b82f6"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 2. Connect with Social Media Button -->
+        <Button
+            android:id="@+id/btn_social_login"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="SOSYAL MEDYA İLE BAĞLAN"
+            android:textColor="#ffffff"
+            android:backgroundTint="#10b981"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 3. Sign up with Email Button -->
+        <Button
+            android:id="@+id/btn_email_login"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="E-POSTA İLE KAYDOL"
+            android:textColor="#ffffff"
+            android:backgroundTint="#6366f1"
+            android:textStyle="bold"
+            android:letterSpacing="0.05" />
+
+    </LinearLayout>
+
+    <!-- Optional Footer Info -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Tüm verileriniz ve başarılarınız güvenle saklanır."
+        android:textColor="#64748b"
+        android:textSize="12sp"
+        android:layout_marginTop="48dp"
+        android:gravity="center" />
+
+</LinearLayout>

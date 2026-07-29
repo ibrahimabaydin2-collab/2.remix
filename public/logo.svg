@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Dark slate gradient for background -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <!-- Shiny emerald gradient for the main tile -->
+    <linearGradient id="tileGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <!-- Glass reflection effect -->
+    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
+    </linearGradient>
+    <!-- High-end drop shadow -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Outer Ring Glow -->
+  <rect x="76" y="76" width="360" height="360" rx="80" fill="none" stroke="#34d399" stroke-width="4" stroke-opacity="0.3" />
+
+  <!-- Main Emerald Tile -->
+  <rect x="96" y="96" width="320" height="320" rx="72" fill="url(#tileGrad)" filter="url(#shadow)" stroke="#34d399" stroke-width="8" />
+
+  <!-- Stylized Letter 'K' inside the tile -->
+  <text x="256" y="325" font-family="'Inter', system-ui, -apple-system, sans-serif" font-size="220" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-5" style="user-select: none;">K</text>
+
+  <!-- Mini Crossing Swords Accent in the Center-Top to emphasize Battle -->
+  <g transform="translate(256, 155) scale(1.3)" filter="drop-shadow(0px 4px 6px rgba(0,0,0,0.3))">
+    <!-- Sword 1 -->
+    <path d="M-20,20 L20,-20" stroke="#ffffff" stroke-width="5" stroke-linecap="round" />
+    <path d="M12,-20 L20,-20 L20,-12" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- Sword 2 -->
+    <path d="M20,20 L-20,-20" stroke="#ffffff" stroke-width="5" stroke-linecap="round" />
+    <path d="M-12,-20 L-20,-20 L-20,-12" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- Guard/Hilt -->
+    <circle cx="0" cy="0" r="4" fill="#f59e0b" />
+  </g>
+
+  <!-- Glass reflection diagonal highlight -->
+  <path d="M96,96 L416,96 L416,190 L96,290 Z" fill="url(#glassGrad)" style="pointer-events: none;" />
+</svg>

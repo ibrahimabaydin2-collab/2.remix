@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow both cleartext and secure HTTPS/WSS connections by default, trusting both system and user CAs -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    
+    <!-- Explicit domain configs for localhost loopbacks and the Render backend to ensure absolute network clearance -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">onrender.com</domain>
+        <domain includeSubdomains="true">kelime-sava.onrender.com</domain>
+    </domain-config>
+</network-security-config>
+

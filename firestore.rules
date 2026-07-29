@@ -1,0 +1,56 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /friend_requests/{requestId} {
+      allow read, write: if true;
+    }
+    
+    match /rooms/{roomId} {
+      allow read, write: if true;
+      
+      match /{subpath=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /challenges/{challengeId} {
+      allow read, write: if true;
+    }
+    
+    match /matchmaking_queue/{queueId} {
+      allow read, write: if true;
+    }
+    
+    match /dictionary/{word} {
+      allow read, write: if true;
+    }
+
+    match /daily_puzzles/{docId} {
+      allow read, write: if true;
+    }
+
+    match /matches/{matchId} {
+      allow read, write: if true;
+
+      match /{subpath=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+
+
+

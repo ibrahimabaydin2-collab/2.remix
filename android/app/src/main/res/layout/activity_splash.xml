@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0f172a"> <!-- slate-900 background -->
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <!-- Elegant App Title -->
+        <TextView
+            android:id="@+id/splash_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="KELİME SAVAŞI"
+            android:textColor="#f8fafc"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Akıl ve Hız Mücadelesi"
+            android:textColor="#94a3b8"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp" />
+
+        <!-- Progress Indicator -->
+        <ProgressBar
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="48dp"
+            android:indeterminate="true"
+            android:indeterminateTint="#3b82f6" /> <!-- blue-500 tint -->
+
+        <TextView
+            android:id="@+id/splash_loading_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kullanıcı oturumu hazırlanıyor..."
+            android:textColor="#64748b"
+            android:textSize="12sp"
+            android:layout_marginTop="16dp" />
+
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="24dp"
+        android:text="© 2026 Kelime Savaşı. Tüm Hakları Saklıdır."
+        android:textColor="#475569"
+        android:textSize="11sp" />
+
+</RelativeLayout>
