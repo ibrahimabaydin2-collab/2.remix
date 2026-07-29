@@ -102,7 +102,6 @@ function createSafeFirestore() {
   try {
     return initializeFirestore(app, {
       experimentalAutoDetectLongPolling: true,
-      experimentalForceLongPolling: true,
       localCache: cacheConfig
     }, dbId);
   } catch (err) {

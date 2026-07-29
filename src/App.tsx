@@ -2024,6 +2024,8 @@ export default function App() {
               setMatchmakingStatus('idle');
               setHasEnteredGame(false);
               showToast('Eşleşme veya maç iptal edildi. Oynanmayan maç için sonuç üretilmedi.', 'info');
+            } else if (data.type === 'channel_subscribed') {
+              console.log(`[Channel Manager] Successfully subscribed to ${data.channel} (${data.wordLength} letters). Active subscribers: ${data.activeSubscribers}`);
             } else if (data.type === 'queued') {
               setMatchmakingStatus('queued');
               showToast('Eşleşme sırasına alındınız. Rakip aranıyor...', 'info');
@@ -2085,6 +2087,8 @@ export default function App() {
               if (data.type === 'match_joined') {
                 setMatchmakingStatus('idle');
                 setIsMatchmakingLocked(false);
+                setGameStatus('playing');
+                setHasEnteredGame(true);
                 
                 if (queueUnsubscribeRef.current) {
                   try { queueUnsubscribeRef.current(); } catch (e) {}
@@ -2092,8 +2096,7 @@ export default function App() {
                 }
                 const currentUidClean = auth.currentUser?.uid || profile?.id;
                 if (currentUidClean) {
-                  deleteDoc(doc(db, 'matchmaking_queue', currentUidClean)).catch(() => {});
-                  deleteDoc(doc(db, `matchmaking_queue_${data.wordLength || 5}`, currentUidClean)).catch(() => {});
+                  clearAllFirestoreMatchmakingQueues(currentUidClean).catch(() => {});
                 }
 
                 const { player1: p1, player2: p2, players: parsedPlayers } = resolveDuelPlayers(data.player1, data.player2, profile, data.players);
@@ -2128,8 +2131,7 @@ export default function App() {
 
                 const currentUidClean = auth.currentUser?.uid || profile?.id;
                 if (currentUidClean) {
-                  deleteDoc(doc(db, 'matchmaking_queue', currentUidClean)).catch(() => {});
-                  deleteDoc(doc(db, `matchmaking_queue_${data.wordLength || 5}`, currentUidClean)).catch(() => {});
+                  clearAllFirestoreMatchmakingQueues(currentUidClean).catch(() => {});
                 }
 
                 const { player1: p1, player2: p2, players: parsedPlayers } = resolveDuelPlayers(data.player1, data.player2, profile, data.players);
@@ -2191,8 +2193,7 @@ export default function App() {
 
                 const currentUidClean = auth.currentUser?.uid || profile?.id;
                 if (currentUidClean) {
-                  deleteDoc(doc(db, 'matchmaking_queue', currentUidClean)).catch(() => {});
-                  deleteDoc(doc(db, `matchmaking_queue_${data.wordLength || 5}`, currentUidClean)).catch(() => {});
+                  clearAllFirestoreMatchmakingQueues(currentUidClean).catch(() => {});
                 }
 
                 const target = turkishUpper(data.targetWord || data.correctWord || '');
@@ -2347,14 +2348,26 @@ export default function App() {
 
               const serverWinnerUserId = data.winnerUserId || data.winnerId || data.winner;
               const isOpponentLeft = data.winReason === 'opponent_left';
+              const isMatchInActivePlay = activeMatchRef.current?.gameState === 'PLAYING' || activeMatchRef.current?.status === 'playing';
+
               if (isOpponentLeft) {
-                setOpponentLeftDuringMatch(true);
+                if (isMatchInActivePlay && hasEnteredGameRef.current) {
+                  setOpponentLeftDuringMatch(true);
+                } else {
+                  console.warn('[WebSocket] Discarded fake opponent_left because match was in matchmaking/pre-game phase');
+                  completelyResetMatchState();
+                  setHasEnteredGame(false);
+                  return;
+                }
               }
 
               handleInstantMatchEndRef.current(serverWinnerUserId, data);
             } else if (data.type === 'opponent_left') {
-              if (!hasEnteredGameRef.current || !activeMatchRef.current) {
-                console.warn('[WebSocket] Discarded opponent_left because user is on home screen');
+              const isMatchInActivePlay = activeMatchRef.current?.gameState === 'PLAYING' || activeMatchRef.current?.status === 'playing';
+              if (!hasEnteredGameRef.current || !activeMatchRef.current || !isMatchInActivePlay || matchmakingStatusRef.current !== 'idle') {
+                console.warn('[WebSocket] Discarded opponent_left because user is not in active PLAYING match');
+                completelyResetMatchState();
+                setHasEnteredGame(false);
                 return;
               }
               setOpponentLeftDuringMatch(true);
@@ -2371,6 +2384,15 @@ export default function App() {
                 status: 'finished',
                 gameState: 'finished'
               });
+            } else if (data.type === 'match_cancelled' || data.type === 'join_rejected') {
+              console.log('[WebSocket] Match cancelled or join rejected before play:', data);
+              completelyResetMatchState();
+              setHasEnteredGame(false);
+              setMatchmakingStatus('idle');
+              setIsMatchmakingLocked(false);
+              if (data.type === 'join_rejected') {
+                showToast(data.message || 'Harf sayısı uyuşmadığı için odaya katılım reddedildi.', 'info');
+              }
             } else if (data.type === 'challenge_received') {
               if (data.challenge) {
                 setActiveChallenges((prev) => {
@@ -3484,9 +3506,11 @@ export default function App() {
         return newMatch;
       });
 
-      if (data.gameState === 'PLAYING' || data.status === 'playing') {
+      if (data.gameState === 'PLAYING' || data.status === 'playing' || data.gameState === 'WAITING' || data.gameState === 'READY' || data.status === 'waiting_ready') {
         setHasEnteredGame((prev) => (prev ? prev : true));
         setGameStatus('playing');
+        setMatchmakingStatus('idle');
+        setIsMatchmakingLocked(false);
         if (data.targetWord || data.correctWord) {
           const newTarget = turkishUpper(data.targetWord || data.correctWord);
           setTargetWord((prev) => (prev === newTarget ? prev : newTarget));
@@ -5176,6 +5200,21 @@ export default function App() {
 
 
 
+  const clearAllFirestoreMatchmakingQueues = async (playerId: string) => {
+    if (!playerId) return;
+    const queueCols = [
+      'matchmaking_queue',
+      'matchmaking_queue_3',
+      'matchmaking_queue_4',
+      'matchmaking_queue_5',
+      'matchmaking_queue_6',
+      'matchmaking_queue_7',
+      'matchmaking_queue_8'
+    ];
+    await Promise.all(queueCols.map(c => deleteDoc(doc(db, c, playerId)).catch(() => {})));
+  };
+  const clearMatchmakingState = clearAllFirestoreMatchmakingQueues;
+
   const handleStartMatchmaking = async (matchWordsCount?: number) => {
     if (isMatchmakingLocked) {
       showToast('Eşleşme kuyruğuna giriş geçici olarak kilitlendi. Lütfen birkaç saniye bekleyin.', 'info');
@@ -5195,22 +5234,29 @@ export default function App() {
         queueUnsubscribeRef.current();
         queueUnsubscribeRef.current = null;
       }
-      if (profile && profile.id) {
-        deleteDoc(doc(db, 'matchmaking_queue', profile.id)).catch(() => {});
-        clearMatchmakingState(profile.id).catch((err) => {
-          console.warn('Database cleanup failed in handleStartMatchmaking leave:', err);
-        });
+      const currentUidClean = auth.currentUser?.uid || profile?.id;
+      if (currentUidClean) {
+        await clearAllFirestoreMatchmakingQueues(currentUidClean);
       }
       showToast('Eşleşme araması iptal edildi.', 'info');
       return;
     }
+
+    // MANDATORY word length resolution (never undefined, null or 0)
+    const rawLen = matchWordsCount !== undefined && matchWordsCount !== null && !isNaN(Number(matchWordsCount)) ? Number(matchWordsCount) : (duelWordLengthRef.current || duelWordLength || wordLength || 5);
+    const targetLen = Math.max(3, Math.min(8, parseInt(String(rawLen), 10) || 5));
+
+    // Synchronously set state and ref immediately
+    setDuelWordLength(targetLen);
+    setWordLength(targetLen);
+    duelWordLengthRef.current = targetLen;
 
     // Deduct 1 gold entry fee for Canlı Oyun
     const hasGold = await deductGold(1);
     if (!hasGold) return;
 
     // RADICAL CLEANUP BEFORE STARTING MATCHMAKING
-    console.log("Radical matchmaking starting: performing complete database and socket cleanup first...");
+    console.log("Radical matchmaking starting: target word length =", targetLen);
     setMatchmakingStatus('queued');
     setActiveMatch(null);
     setGameStatus('idle');
@@ -5238,18 +5284,14 @@ export default function App() {
       }
     }
 
-    const targetLen = Math.max(3, Math.min(10, parseInt(String(matchWordsCount || duelWordLength || 5), 10) || 5));
-    setDuelWordLength(targetLen);
-    setWordLength(targetLen);
-    duelWordLengthRef.current = targetLen;
-
     const queueCollectionName = 'matchmaking_queue_' + targetLen;
 
-    // Send WebSocket join if available
+    // Send WebSocket join if available with strictly validated wordLength
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       try {
-        socketRef.current.send(JSON.stringify({
+        const payload = {
           type: 'join_matchmaking',
+          channel: 'Channel_' + targetLen,
           wordLength: targetLen,
           id: currentUid,
           userId: currentUid,
@@ -5258,7 +5300,9 @@ export default function App() {
           username: selfName,
           displayName: selfName,
           avatarUrl: selfAvatar
-        }));
+        };
+        console.log('[WebSocket] Sending join_matchmaking:', payload);
+        socketRef.current.send(JSON.stringify(payload));
       } catch (e) {
         console.warn("WebSocket join attempt failed:", e);
       }
@@ -5347,6 +5391,8 @@ export default function App() {
             setAttempts([]);
             setCurrentAttempt('');
             setLetterStatuses({});
+            setGameStatus('playing');
+            setHasEnteredGame(true);
             setMatchmakingStatus('idle');
             setIsMatchmakingLocked(false);
             showToast('Eşleşme bulundu! Düello hazırlanıyor... ⚡', 'success');
@@ -5410,12 +5456,13 @@ export default function App() {
           const oppDoc = waitingDocs[0];
           const oppData = oppDoc.data();
           const oppId = oppData.playerId || oppData.uid || oppData.id || oppDoc.id;
+          const oppDocRef = doc(db, queueCollectionName, oppId);
           const oppName = oppData.name || oppData.username || oppData.displayName || 'Oyuncu';
 
           const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
           const word = turkishUpper(getRandomWord(targetLen, true));
 
-          console.log(`[Firestore Fallback Matchmaking] Match found in queue (${targetLen} letters)! Opponent: ${oppName}. Creating match ${matchId} with word ${word}`);
+          console.log(`[Firestore Fallback Matchmaking] Attempting atomic transaction match (${targetLen} letters)! Opponent: ${oppName}. Match ID: ${matchId}`);
 
           const matchPayload = {
             id: matchId,
@@ -5436,42 +5483,69 @@ export default function App() {
             winner: null
           };
 
-          // Create match documents in Firestore
-          await setDoc(doc(db, 'matches', matchId), matchPayload);
-          await setDoc(doc(db, 'rooms', matchId), matchPayload);
+          try {
+            await runTransaction(db, async (transaction) => {
+              const oppSnap = await transaction.get(oppDocRef);
+              const mySnap = await transaction.get(myQueueRef);
 
-          // Notify opponent via their queue document in the same isolated queue collection
-          await setDoc(doc(db, queueCollectionName, oppId), {
-            status: 'matched',
-            matchId,
-            correctWord: word,
-            targetWord: word,
-            wordLength: targetLen,
-            player1: matchPayload.player1,
-            player2: matchPayload.player2,
-            players: matchPayload.players,
-            opponent: { id: currentUid, uid: currentUid, name: selfName, username: selfName, displayName: selfName, avatarUrl: selfAvatar }
-          }, { merge: true }).catch((err) => {
-            console.warn("[Firestore Matchmaking] Failed updating opponent queue doc:", err);
-          });
+              if (!oppSnap.exists() || oppSnap.data()?.status !== 'waiting') {
+                throw new Error('Opponent is no longer in waiting state.');
+              }
+              if (mySnap.exists() && mySnap.data()?.status === 'matched') {
+                throw new Error('Self was already matched in another process.');
+              }
 
-          // Launch match for ourselves
-          setActiveMatch(matchPayload);
-          setTargetWord(word);
-          setWordLength(targetLen);
-          setAttempts([]);
-          setCurrentAttempt('');
-          setLetterStatuses({});
-          setGameStatus('playing');
-          setHasEnteredGame(true);
-          setMatchmakingStatus('idle');
-          setIsMatchmakingLocked(false);
-          showToast('Rakip bulundu! Düello başladı! ⚡', 'success');
+              // 1. Atomically update opponent queue document
+              transaction.update(oppDocRef, {
+                status: 'matched',
+                matchId,
+                correctWord: word,
+                targetWord: word,
+                wordLength: targetLen,
+                player1: matchPayload.player1,
+                player2: matchPayload.player2,
+                players: matchPayload.players,
+                opponent: { id: currentUid, uid: currentUid, name: selfName, username: selfName, displayName: selfName, avatarUrl: selfAvatar }
+              });
 
-          deleteDoc(myQueueRef).catch(() => {});
-          if (queueUnsubscribeRef.current) {
-            queueUnsubscribeRef.current();
-            queueUnsubscribeRef.current = null;
+              // 2. Atomically update own queue document
+              transaction.set(myQueueRef, {
+                status: 'matched',
+                matchId,
+                correctWord: word,
+                targetWord: word,
+                wordLength: targetLen,
+                player1: matchPayload.player1,
+                player2: matchPayload.player2,
+                players: matchPayload.players,
+                opponent: { id: oppId, uid: oppId, name: oppName, username: oppName, displayName: oppName, avatarUrl: oppData.avatarUrl || '' }
+              }, { merge: true });
+
+              // 3. Atomically create room and match documents
+              transaction.set(doc(db, 'matches', matchId), matchPayload);
+              transaction.set(doc(db, 'rooms', matchId), matchPayload);
+            });
+
+            // Launch match for ourselves after atomic transaction succeeds
+            setActiveMatch(matchPayload);
+            setTargetWord(word);
+            setWordLength(targetLen);
+            setAttempts([]);
+            setCurrentAttempt('');
+            setLetterStatuses({});
+            setGameStatus('playing');
+            setHasEnteredGame(true);
+            setMatchmakingStatus('idle');
+            setIsMatchmakingLocked(false);
+            showToast('Rakip bulundu! Düello başladı! ⚡', 'success');
+
+            deleteDoc(myQueueRef).catch(() => {});
+            if (queueUnsubscribeRef.current) {
+              queueUnsubscribeRef.current();
+              queueUnsubscribeRef.current = null;
+            }
+          } catch (txErr: any) {
+            console.warn("[Firestore Matchmaking Transaction Cancelled]:", txErr?.message || txErr);
           }
         }
       }

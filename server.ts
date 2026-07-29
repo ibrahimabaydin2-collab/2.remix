@@ -827,44 +827,83 @@ async function startServer() {
   const wss = new WebSocketServer({ server, path: '/ws' });
   const connectedClients = new Map<WebSocket, any>();
 
-  // COMPLETELY ISOLATED AND INDEPENDENT QUEUE ARRAYS FOR EACH WORD LENGTH (3 TO 8)
-  interface MatchmakingQueueItem {
+  // RADICAL CHANNEL / ROOM ARCHITECTURE FOR INDEPENDENT WORD LENGTH CHANNELS (Channel_3 to Channel_8)
+  interface ChannelSubscriber {
     ws: WebSocket;
     player: { id: string; name: string; avatarUrl: string };
-    wordLength: number;
-    timestamp: number;
+    joinedAt: number;
+    isSearchingMatch: boolean;
   }
 
-  const matchmaking_queue_3: MatchmakingQueueItem[] = [];
-  const matchmaking_queue_4: MatchmakingQueueItem[] = [];
-  const matchmaking_queue_5: MatchmakingQueueItem[] = [];
-  const matchmaking_queue_6: MatchmakingQueueItem[] = [];
-  const matchmaking_queue_7: MatchmakingQueueItem[] = [];
-  const matchmaking_queue_8: MatchmakingQueueItem[] = [];
+  interface WordLengthChannel {
+    length: number;
+    channelName: string; // e.g. 'Channel_4'
+    subscribers: Map<WebSocket, ChannelSubscriber>;
+    matchmakingQueue: ChannelSubscriber[];
+  }
 
-  const queuesByLength: Record<number, MatchmakingQueueItem[]> = {
-    3: matchmaking_queue_3,
-    4: matchmaking_queue_4,
-    5: matchmaking_queue_5,
-    6: matchmaking_queue_6,
-    7: matchmaking_queue_7,
-    8: matchmaking_queue_8,
+  const channelsByLength: Record<number, WordLengthChannel> = {
+    3: { length: 3, channelName: 'Channel_3', subscribers: new Map(), matchmakingQueue: [] },
+    4: { length: 4, channelName: 'Channel_4', subscribers: new Map(), matchmakingQueue: [] },
+    5: { length: 5, channelName: 'Channel_5', subscribers: new Map(), matchmakingQueue: [] },
+    6: { length: 6, channelName: 'Channel_6', subscribers: new Map(), matchmakingQueue: [] },
+    7: { length: 7, channelName: 'Channel_7', subscribers: new Map(), matchmakingQueue: [] },
+    8: { length: 8, channelName: 'Channel_8', subscribers: new Map(), matchmakingQueue: [] },
   };
 
-  function removeFromAllMatchmakingQueues(ws: WebSocket, playerId?: string) {
-    Object.values(queuesByLength).forEach((queue) => {
-      for (let i = queue.length - 1; i >= 0; i--) {
-        const item = queue[i];
+  function getChannel(length: number): WordLengthChannel | null {
+    return channelsByLength[length] || null;
+  }
+
+  function removeWsFromAllChannels(ws: WebSocket, playerId?: string) {
+    Object.values(channelsByLength).forEach((ch) => {
+      ch.subscribers.delete(ws);
+      if (playerId) {
+        for (const [sWs, subObj] of ch.subscribers.entries()) {
+          if (subObj.player?.id === playerId) {
+            ch.subscribers.delete(sWs);
+          }
+        }
+      }
+      for (let i = ch.matchmakingQueue.length - 1; i >= 0; i--) {
+        const item = ch.matchmakingQueue[i];
         if (
           !item.ws ||
           item.ws.readyState !== WebSocket.OPEN ||
           item.ws === ws ||
           (playerId && item.player?.id === playerId)
         ) {
-          queue.splice(i, 1);
+          ch.matchmakingQueue.splice(i, 1);
         }
       }
     });
+  }
+
+  function subscribeToChannel(ws: WebSocket, player: { id: string; name: string; avatarUrl: string }, length: number): WordLengthChannel | null {
+    const channel = getChannel(length);
+    if (!channel) return null;
+
+    // 1. Unsubscribe socket from all other channels first to guarantee 100% channel isolation
+    removeWsFromAllChannels(ws, player.id);
+
+    const subscriber: ChannelSubscriber = {
+      ws,
+      player,
+      joinedAt: Date.now(),
+      isSearchingMatch: false
+    };
+
+    channel.subscribers.set(ws, subscriber);
+    console.log(`[Channel Manager] Player ${player.name} (${player.id}) subscribed to ${channel.channelName}. Total subscribers: ${channel.subscribers.size}`);
+
+    sendWs(ws, {
+      type: 'channel_subscribed',
+      channel: channel.channelName,
+      wordLength: length,
+      activeSubscribers: channel.subscribers.size
+    });
+
+    return channel;
   }
 
   interface MatchPlayer {
@@ -1246,7 +1285,7 @@ async function startServer() {
           }
         } else if (!p1Connected || !p2Connected) {
           if (match.disconnectedAt && (now - match.disconnectedAt > 3000)) {
-            if (match.gameState === 'PLAYING') {
+            if (match.gameState === 'PLAYING' && match.startedAt) {
               match.gameState = 'FINISHED';
               const winnerPlayer = p1Connected ? match.player1 : match.player2;
               const loserPlayer = p1Connected ? match.player2 : match.player1;
@@ -1289,15 +1328,12 @@ async function startServer() {
               };
               setDoc(doc(db, 'matches', matchId), cancelData, { merge: true }).catch(() => {});
               setDoc(doc(db, 'rooms', matchId), cancelData, { merge: true }).catch(() => {});
-
-              const cancelPayload = { type: 'match_cancelled', matchId, reason: 'cancelled_before_play' };
-              if (match.player1.ws) sendWs(match.player1.ws, cancelPayload);
-              if (match.player2.ws) sendWs(match.player2.ws, cancelPayload);
+              const cancelPayload = { type: 'match_cancelled', matchId: match.matchId, reason: 'cancelled_before_play' };
+              broadcastToMatch(match, cancelPayload);
+              if (match.player1.ws) socketToMatchIdMap.delete(match.player1.ws);
+              if (match.player2.ws) socketToMatchIdMap.delete(match.player2.ws);
+              activeDuelMatches.delete(matchId);
             }
-
-            if (match.player1.ws) socketToMatchIdMap.delete(match.player1.ws);
-            if (match.player2.ws) socketToMatchIdMap.delete(match.player2.ws);
-            setTimeout(() => activeDuelMatches.delete(matchId), 1000);
           } else if (!match.disconnectedAt) {
             match.disconnectedAt = now;
           }
@@ -1339,7 +1375,7 @@ async function startServer() {
   function handlePlayerDisconnect(ws: WebSocket) {
     const client = connectedClients.get(ws);
     connectedClients.delete(ws);
-    removeFromAllMatchmakingQueues(ws, client?.id);
+    removeWsFromAllChannels(ws, client?.id);
 
     let matchId = socketToMatchIdMap.get(ws);
     let match = matchId ? activeDuelMatches.get(matchId) : undefined;
@@ -1477,7 +1513,38 @@ async function startServer() {
           }
         } else if (data.type === 'ping') {
           sendWs(ws, { type: 'pong' });
-        } else if (data.type === 'join_matchmaking') {
+        } else if (data.type === 'subscribe_channel' || data.type === 'switch_channel') {
+          if (!data.wordLength || isNaN(Number(data.wordLength))) {
+            sendWs(ws, { type: 'error', message: 'Harf sayısı belirtilmedi.' });
+            return;
+          }
+          const length = Number(data.wordLength);
+          if (length < 3 || length > 8) {
+            sendWs(ws, { type: 'error', message: 'Geçersiz harf sayısı.' });
+            return;
+          }
+          const existingClient = connectedClients.get(ws);
+          const playerId = data.id || data.userId || data.playerId || data.uid || existingClient?.id || 'p_' + Date.now();
+          const playerName = data.name || data.username || data.displayName || existingClient?.name || 'Oyuncu';
+          const playerAvatar = data.avatarUrl || existingClient?.avatarUrl || '';
+          const player = { id: playerId, name: playerName, avatarUrl: playerAvatar };
+          connectedClients.set(ws, player);
+
+          subscribeToChannel(ws, player, length);
+        } else if (data.type === 'join_matchmaking' || data.type === 'find_match' || data.type === 'join_queue') {
+          if (!data.wordLength || isNaN(Number(data.wordLength))) {
+            console.warn('[Duel Server] Rejecting match join: missing or invalid wordLength in payload:', data);
+            sendWs(ws, { type: 'error', message: 'Harf sayısı belirtilmedi.' });
+            return;
+          }
+          const parsedRaw = Number(data.wordLength);
+          if (parsedRaw < 3 || parsedRaw > 8) {
+            console.warn('[Duel Server] Rejecting match join: wordLength out of bounds (3-8):', parsedRaw);
+            sendWs(ws, { type: 'error', message: 'Geçersiz harf sayısı.' });
+            return;
+          }
+          const length = parsedRaw;
+
           const existingClient = connectedClients.get(ws);
           const playerId = data.id || data.userId || data.playerId || data.uid || existingClient?.id || 'p_' + Date.now();
           const playerName = data.name || data.username || data.displayName || existingClient?.name || 'Oyuncu';
@@ -1485,14 +1552,6 @@ async function startServer() {
 
           const player = { id: playerId, name: playerName, avatarUrl: playerAvatar };
           connectedClients.set(ws, player);
-          const rawLength = data.wordLength;
-          const parsedRaw = parseInt(String(rawLength), 10);
-          if (rawLength === undefined || rawLength === null || isNaN(parsedRaw)) {
-            console.warn('[Duel Server] Rejecting join_matchmaking: missing or invalid wordLength in payload:', data);
-            sendWs(ws, { type: 'error', message: 'Harf sayısı zorunlu bir filtredir. Lütfen bir harf sayısı seçin.' });
-            return;
-          }
-          const length = Math.max(3, Math.min(8, parsedRaw));
 
           // Unbind socket from any old matches
           socketToMatchIdMap.delete(ws);
@@ -1506,41 +1565,93 @@ async function startServer() {
             }
           }
 
-          // Clean up player/socket from ALL queues before adding to their target queue
-          removeFromAllMatchmakingQueues(ws, player.id);
-
-          // 1. Get ONLY the dedicated, isolated queue for this exact word length (3, 4, 5, 6, 7, 8)
-          const targetQueue = queuesByLength[length];
-          if (!targetQueue) {
-            sendWs(ws, { type: 'error', message: 'Geçersiz harf sayısı.' });
+          // 1. Oyuncuyu doğrudan Channel_<length> kanalına abone et (Varsa önceki kanallarından izole edilir)
+          const channel = subscribeToChannel(ws, player, length);
+          if (!channel) {
+            sendWs(ws, { type: 'error', message: 'Geçersiz harf kanalı.' });
             return;
           }
 
-          // 2. Add player ONLY to their specific word length queue
-          targetQueue.push({ ws, player, wordLength: length, timestamp: Date.now() });
-          sendWs(ws, { type: 'queued', wordLength: length });
+          // 2. Eşleşme aramasını SADECE bu spesifik kanalın (Channel_<length>) aktif aboneleri arasında yürüt
+          let subscriber = channel.subscribers.get(ws);
+          if (!subscriber) {
+            subscriber = { ws, player, joinedAt: Date.now(), isSearchingMatch: true };
+            channel.subscribers.set(ws, subscriber);
+          } else {
+            subscriber.isSearchingMatch = true;
+          }
 
-          console.log(`[Duel Server] Player ${player.name} (${player.id}) joined queue for ${length} letters. Queue count: ${targetQueue.length}`);
+          const isAlreadyInQueue = channel.matchmakingQueue.some(q => q.ws === ws || q.player?.id === player.id);
+          if (!isAlreadyInQueue) {
+            channel.matchmakingQueue.push(subscriber);
+          }
 
-          // 3. STRICT ISOLATED MATCH CHECK: ONLY inspect the player's own word length queue.
-          // If element count is less than 2, DO NOTHING and wait!
-          if (targetQueue.length < 2) {
+          sendWs(ws, { type: 'queued', channel: channel.channelName, wordLength: length });
+
+          // 3. EĞER BU KANALDA YETERLİ OYUNCU (EN AZ 2 KİŞİ) YOKSA STOP ET! (Aşağı kaymasını engelle)
+          if (channel.matchmakingQueue.length < 2) {
             return;
           }
 
-          // 4. Exactly 2 or more players are in this isolated queue! Start match between first 2 players
-          const p1Item = targetQueue.shift()!;
-          const p2Item = targetQueue.shift()!;
+          // 4. Havuzda en az 2 kişi varsa SADECE BU KANALIN KUYRUĞUNDAN 2 kişiyi çıkar
+          const sub1 = channel.matchmakingQueue.shift()!;
+          const sub2 = channel.matchmakingQueue.shift()!;
 
           // Ensure both sockets are open before building match
-          if (p1Item.ws.readyState !== WebSocket.OPEN) {
-            if (p2Item.ws.readyState === WebSocket.OPEN) {
-              targetQueue.unshift(p2Item);
+          if (!sub1.ws || sub1.ws.readyState !== WebSocket.OPEN) {
+            if (sub2.ws && sub2.ws.readyState === WebSocket.OPEN) {
+              channel.matchmakingQueue.unshift(sub2);
             }
             return;
           }
-          if (p2Item.ws.readyState !== WebSocket.OPEN) {
-            targetQueue.unshift(p1Item);
+          if (!sub2.ws || sub2.ws.readyState !== WebSocket.OPEN) {
+            channel.matchmakingQueue.unshift(sub1);
+            return;
+          }
+
+          // Güvenlik 1: Aynı oyuncu kendisiyle eşleşemez
+          if (sub1.player.id === sub2.player.id) {
+            console.warn(`[MATCH ERROR] Aynı oyuncu ID'si (${sub1.player.id}) tespit edildi, ikinci istek iptal edildi.`);
+            channel.matchmakingQueue.unshift(sub2);
+            return;
+          }
+
+          // Güvenlik 2: Oyunculardan biri zaten aktif bir maçta mı kontrol et
+          let p1Active = false;
+          let p2Active = false;
+          for (const mObj of activeDuelMatches.values()) {
+            if (mObj.gameState === 'WAITING' || mObj.gameState === 'READY' || mObj.gameState === 'PLAYING') {
+              if (mObj.player1.id === sub1.player.id || mObj.player2.id === sub1.player.id) p1Active = true;
+              if (mObj.player1.id === sub2.player.id || mObj.player2.id === sub2.player.id) p2Active = true;
+            }
+          }
+          if (p1Active || p2Active) {
+            console.warn(`[MATCH ERROR] Oyculardan biri zaten aktif bir maçta (p1Active: ${p1Active}, p2Active: ${p2Active}). Eşleşme iptal edildi.`);
+            if (!p1Active && sub1.ws.readyState === WebSocket.OPEN) channel.matchmakingQueue.unshift(sub1);
+            if (!p2Active && sub2.ws.readyState === WebSocket.OPEN) channel.matchmakingQueue.unshift(sub2);
+            return;
+          }
+
+          sub1.isSearchingMatch = false;
+          sub2.isSearchingMatch = false;
+
+          // KURALLAR GEREĞİ: Eşleşen iki oyuncu da ANINDA bütün matchmaking kuyruklarından ve kanallarından tamamen silinir
+          removeWsFromAllChannels(sub1.ws, sub1.player.id);
+          removeWsFromAllChannels(sub2.ws, sub2.player.id);
+
+          // Firestore üzerindeki bekleme kayıtlarını da anında temizle
+          const qCols = ['matchmaking_queue', 'matchmaking_queue_3', 'matchmaking_queue_4', 'matchmaking_queue_5', 'matchmaking_queue_6', 'matchmaking_queue_7', 'matchmaking_queue_8'];
+          qCols.forEach(col => {
+            deleteDoc(doc(db, col, sub1.player.id)).catch(() => {});
+            deleteDoc(doc(db, col, sub2.player.id)).catch(() => {});
+          });
+
+          const p1Item = { ws: sub1.ws, player: sub1.player, wordLength: length };
+          const p2Item = { ws: sub2.ws, player: sub2.player, wordLength: length };
+
+          // 5. Ekstra Güvenlik: İki oyuncunun harf sayıları eşit değilse maçı KESİNLİKLE başlatma
+          if (p1Item.wordLength !== p2Item.wordLength || p1Item.wordLength !== length) {
+            console.warn(`[MATCH ERROR] Farklı harf sayıları veya kanal uyuşmazlığı tespit edildi, işlem iptal edildi.`);
             return;
           }
 
@@ -1589,8 +1700,8 @@ async function startServer() {
             wordLength: length,
             targetWord: correctWord,
             correctWord,
-            gameState: 'PLAYING',
-            status: 'playing',
+            gameState: 'WAITING',
+            status: 'waiting_ready',
             createdAt: new Date().toISOString(),
             player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
             player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl },
@@ -1661,7 +1772,7 @@ async function startServer() {
           }, 2500);
         } else if (data.type === 'leave_matchmaking') {
           const existingClient = connectedClients.get(ws);
-          removeFromAllMatchmakingQueues(ws, data.id || existingClient?.id);
+          removeWsFromAllChannels(ws, data.id || existingClient?.id);
         } else if (data.type === 'submit_guess') {
           const matchId = data.matchId || socketToMatchIdMap.get(ws);
           if (!matchId) return;
@@ -1830,6 +1941,30 @@ async function startServer() {
           }
         } else if (data.type === 'leave_match') {
           handlePlayerDisconnect(ws);
+        } else if (data.type === 'join_room' || data.type === 'join_match') {
+          const matchId = data.matchId || data.roomId;
+          const joiningPlayerWordLength = data.wordLength ? Number(data.wordLength) : null;
+          const matchObj = activeDuelMatches.get(matchId);
+
+          if (matchObj) {
+            const roomWordLength = Number(matchObj.wordLength);
+            // ODAYA KATILIM (JOIN ROOM) HARF KİLİDİ KONTROLÜ:
+            // İkinci oyuncu katılırken, katılmak istenen odanın harf sayısı ile ikinci oyuncunun seçtiği harf sayısı kontrol edilir.
+            // Harf sayıları BİREBİR AYNI DEĞİLSE, sunucu katılmaya KESİNLİKLE İZİN VERMEZ (Reject Join).
+            if (joiningPlayerWordLength !== null && joiningPlayerWordLength !== roomWordLength) {
+              console.warn(`[Join Room Lock] Rejecting room join! Player requested ${joiningPlayerWordLength} letters, but Room ${matchId} has ${roomWordLength} letters.`);
+              sendWs(ws, {
+                type: 'join_rejected',
+                reason: 'word_length_mismatch',
+                message: `Katılmak istenen oda ${roomWordLength} harflidir. Seçtiğiniz (${joiningPlayerWordLength}) harf sayısı ile birebir aynı değildir.`,
+                roomWordLength,
+                requestedWordLength: joiningPlayerWordLength
+              });
+              // Katılım reddedildiğinde maç odası patlatılmaz, otomatik galibiyet tetiklenmez, sonuç ekranı açılmaz.
+              // İlk oyuncu odasında kalmaya, ikinci oyuncu da kendi harf sayısına uygun oda aramaya devam eder.
+              return;
+            }
+          }
         } else if (data.type === 'challenge') {
           const existingClient = connectedClients.get(ws);
           const challengerId = data.challengerId || existingClient?.id;
@@ -1969,8 +2104,8 @@ async function startServer() {
               wordLength,
               targetWord: correctWord,
               correctWord,
-              gameState: 'PLAYING',
-              status: 'playing',
+              gameState: 'WAITING',
+              status: 'waiting_ready',
               createdAt: new Date().toISOString(),
               player1: { id: challengerId, name: challengerName, avatarUrl: challengerAvatar },
               player2: { id: challengedId, name: challengedName, avatarUrl: challengedAvatar },
