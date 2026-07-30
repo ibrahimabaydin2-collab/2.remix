@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="1080dp"
+    android:height="1920dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1920">
+
+    <!-- Solid Dark Navy Screen Background -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M 0,0 L 1080,0 L 1080,1920 L 0,1920 Z"/>
+
+    <!-- Subtle Radial Glow Background Ring in Center -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M 540,810 A 250,250 0 1,0 540,1310 A 250,250 0 1,0 540,810 Z"/>
+
+    <!-- CENTER GAME EMBLEM (Golden Brain + Lightning + Word Tiles) -->
+    <!-- Left Brain (Emerald Green) -->
+    <path
+        android:fillColor="#27AE60"
+        android:strokeColor="#1E8449"
+        android:strokeWidth="4"
+        android:pathData="M 500,900 C 440,890 380,930 360,980 C 340,1030 350,1080 370,1120 C 390,1160 440,1200 500,1200 C 520,1200 530,1160 530,1120 L 530,940 C 530,910 520,900 500,900 Z"/>
+
+    <!-- Right Brain (Royal Blue) -->
+    <path
+        android:fillColor="#2980B9"
+        android:strokeColor="#1B4F72"
+        android:strokeWidth="4"
+        android:pathData="M 580,900 C 640,890 700,930 720,980 C 740,1030 730,1080 710,1120 C 690,1160 640,1200 580,1200 C 560,1200 550,1160 550,1120 L 550,940 C 550,910 560,900 580,900 Z"/>
+
+    <!-- Center Golden Lightning Bolt -->
+    <path
+        android:fillColor="#FFD700"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:pathData="M 570,870 L 490,1030 L 550,1030 L 510,1190 L 610,1010 L 550,1010 Z"/>
+
+    <!-- Top Letter Tile 'K' -->
+    <path
+        android:fillColor="#F2C94C"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M 400,800 L 460,800 A 10,10 0 0,1 470,810 L 470,870 A 10,10 0 0,1 460,880 L 400,880 A 10,10 0 0,1 390,870 L 390,810 A 10,10 0 0,1 400,800 Z"/>
+    <path
+        android:fillColor="#3E2723"
+        android:pathData="M 415,820 L 428,820 L 428,838 L 442,820 L 454,820 L 436,842 L 455,868 L 442,868 L 428,848 L 428,868 L 415,868 Z"/>
+
+    <!-- Top Letter Tile 'S' -->
+    <path
+        android:fillColor="#F2C94C"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M 620,800 L 680,800 A 10,10 0 0,1 690,810 L 690,870 A 10,10 0 0,1 680,880 L 620,880 A 10,10 0 0,1 610,870 L 610,810 A 10,10 0 0,1 620,800 Z"/>
+    <path
+        android:fillColor="#3E2723"
+        android:pathData="M 662,828 C 655,822 642,822 636,828 C 630,834 630,841 642,845 C 655,849 662,855 658,863 C 654,871 635,871 625,864 L 628,855 C 638,860 650,861 651,855 C 652,851 644,849 634,846 C 624,843 621,833 624,826 C 628,818 644,815 657,819 Z"/>
+
+</vector>

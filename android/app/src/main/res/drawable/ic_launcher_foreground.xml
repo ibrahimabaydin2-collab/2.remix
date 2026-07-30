@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- LEFT BRAIN (Green) -->
+    <path
+        android:fillColor="#27AE60"
+        android:strokeColor="#1E8449"
+        android:strokeWidth="1"
+        android:pathData="M 46,32 C 37,31 28,37 25,44 C 22,51 23,58 26,64 C 29,70 37,75 46,75 C 49,75 50,70 50,64 L 50,37 C 50,33 48,32 46,32 Z"/>
+    
+    <!-- Left Brain Folds -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#52BE80"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M 34,40 C 28,45 30,52 35,54 M 30,48 C 24,53 26,62 33,65 M 40,36 C 33,41 35,50 41,52"/>
+
+    <!-- RIGHT BRAIN (Blue) -->
+    <path
+        android:fillColor="#2980B9"
+        android:strokeColor="#1B4F72"
+        android:strokeWidth="1"
+        android:pathData="M 62,32 C 71,31 80,37 83,44 C 86,51 85,58 82,64 C 79,70 71,75 62,75 C 59,75 58,70 58,64 L 58,37 C 58,33 60,32 62,32 Z"/>
+
+    <!-- Right Brain Folds -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#5DADE2"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M 74,40 C 80,45 78,52 73,54 M 78,48 C 84,53 82,62 75,65 M 68,36 C 75,41 73,50 67,52"/>
+
+    <!-- CENTER GOLD LIGHTNING BOLT -->
+    <path
+        android:fillColor="#FFD700"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1"
+        android:strokeLineJoin="round"
+        android:pathData="M 55,27 L 43,51 L 52,51 L 47,75 L 63,48 L 53,48 Z"/>
+
+    <!-- Lightning Inner Bevel Highlight -->
+    <path
+        android:fillColor="#FFF5B8"
+        android:pathData="M 55,29 L 45,50 L 52,50 L 48,70 L 60,49 L 53,49 Z"/>
+
+    <!-- CUTE FACE ON LIGHTNING -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#3E2723"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:pathData="M 48,46 C 49,44 51,44 52,46"/>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#3E2723"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:pathData="M 55,46 C 56,44 58,44 59,46"/>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#3E2723"
+        android:strokeWidth="1"
+        android:strokeLineCap="round"
+        android:pathData="M 51,49 C 52,51 54,51 55,49"/>
+    <path
+        android:fillColor="#F1948A"
+        android:pathData="M 47,48 A 1.5,1 0 1,0 50,48 A 1.5,1 0 1,0 47,48 Z"/>
+    <path
+        android:fillColor="#F1948A"
+        android:pathData="M 57,48 A 1.5,1 0 1,0 60,48 A 1.5,1 0 1,0 57,48 Z"/>
+
+    <!-- TOP LETTER TILE "K" -->
+    <path
+        android:fillColor="#F2C94C"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.8"
+        android:pathData="M 28,20 L 38,20 A 2,2 0 0,1 40,22 L 40,32 A 2,2 0 0,1 38,34 L 28,34 A 2,2 0 0,1 26,32 L 26,22 A 2,2 0 0,1 28,20 Z"/>
+    <path
+        android:fillColor="#3E2723"
+        android:pathData="M 30,23 L 32,23 L 32,26 L 35,23 L 37,23 L 34,26.5 L 37,31 L 35,31 L 32.5,27.2 L 32,27.8 L 32,31 L 30,31 Z"/>
+
+    <!-- TOP LETTER TILE "S" -->
+    <path
+        android:fillColor="#F2C94C"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.8"
+        android:pathData="M 70,20 L 80,20 A 2,2 0 0,1 82,22 L 82,32 A 2,2 0 0,1 80,34 L 70,34 A 2,2 0 0,1 68,32 L 68,22 A 2,2 0 0,1 68,22 A 2,2 0 0,1 70,20 Z"/>
+    <path
+        android:fillColor="#3E2723"
+        android:pathData="M 78,24 C 77,23 75,23 74,24 C 73,25 73,26 75,26.5 C 77,27 78,28 77.5,29.5 C 77,31 74,31 72,30 L 72.5,28.5 C 74,29.3 75.8,29.5 76,28.5 C 76.2,27.8 75,27.5 73.5,27 C 72,26.5 71.5,25 72,23.8 C 72.5,22.5 75,22 77,22.5 Z"/>
+
+</vector>
