@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Sparkles, Swords, User } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Sparkles, Swords, User, Camera, Image as ImageIcon, X } from 'lucide-react';
 import { UserProfile, isImageUrl } from '../types';
 import { validateUsername } from '../utils/usernameValidation';
 import { checkUsernameExists } from '../lib/firebase';
@@ -7,6 +7,7 @@ import { checkUsernameExists } from '../lib/firebase';
 interface FirstTimeSetupProps {
   profile?: UserProfile | null;
   onComplete: (name: string, avatarUrl: string) => void;
+  showToast?: (message: string, type?: 'info' | 'error' | 'success') => void;
 }
 
 const AVATAR_PRESETS = [
@@ -15,12 +16,69 @@ const AVATAR_PRESETS = [
   '🔥', '🐉', '🐼', '🛡️', '🏆', '🦉'
 ];
 
-export default function FirstTimeSetup({ profile, onComplete }: FirstTimeSetupProps) {
+export default function FirstTimeSetup({ profile, onComplete, showToast }: FirstTimeSetupProps) {
   const [username, setUsername] = useState<string>('');
   const [selectedAvatar, setSelectedAvatar] = useState<string>('🧠');
   const [isTouched, setIsTouched] = useState<boolean>(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState<boolean>(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+
+  const checkMediaPermission = async (type: 'camera' | 'gallery'): Promise<boolean> => {
+    // 1. Capacitor Camera Plugin Check (if running in hybrid / native Capacitor environment)
+    if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+      const cameraPlugin = (window as any).Capacitor?.Plugins?.Camera;
+      if (cameraPlugin && typeof cameraPlugin.checkPermissions === 'function') {
+        try {
+          let status = await cameraPlugin.checkPermissions();
+          if (type === 'camera' && (status?.camera === 'prompt' || status?.camera === 'prompt-with-rationale')) {
+            status = await cameraPlugin.requestPermissions({ permissions: ['camera'] });
+          } else if (type === 'gallery' && (status?.photos === 'prompt' || status?.photos === 'prompt-with-rationale')) {
+            status = await cameraPlugin.requestPermissions({ permissions: ['photos'] });
+          }
+          
+          const isDenied = type === 'camera' 
+            ? status?.camera === 'denied' 
+            : status?.photos === 'denied';
+
+          if (isDenied) {
+            return false;
+          }
+        } catch (err) {
+          console.warn('Capacitor camera permission check warning:', err);
+        }
+      }
+    }
+
+    // 2. Web navigator.permissions API
+    if (typeof navigator !== 'undefined' && navigator.permissions && typeof (navigator.permissions as any).query === 'function') {
+      try {
+        const permName = type === 'camera' ? 'camera' : 'photos';
+        const res = await (navigator.permissions as any).query({ name: permName });
+        if (res.state === 'denied') {
+          return false;
+        }
+      } catch (e) {
+        // Permission query descriptor for camera/photos might not be supported on all desktop/mobile browsers
+      }
+    }
+
+    // 3. Web getUserMedia test for camera
+    if (type === 'camera' && typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (camErr: any) {
+        console.warn('Camera permission denied or error:', camErr);
+        return false;
+      }
+    }
+
+    return true;
+  };
 
   // Debounced real-time check for username availability in database
   React.useEffect(() => {
@@ -54,43 +112,107 @@ export default function FirstTimeSetup({ profile, onComplete }: FirstTimeSetupPr
 
   const error = (isTouched || username ? validateUsername(username, [], profile?.id || '') : null) || dbError;
 
-  const handleCustomAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const handleImageFileSelected = (file: File) => {
+    if (!file) return;
+    setPermissionError(null);
+    try {
       const reader = new FileReader();
+      reader.onerror = () => {
+        const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+        setPermissionError(msg);
+        if (showToast) showToast(msg, 'error');
+      };
       reader.onloadend = () => {
-        const img = new Image();
+        const img = new window.Image();
+        img.onerror = () => {
+          const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+          setPermissionError(msg);
+          if (showToast) showToast(msg, 'error');
+        };
         img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 128;
-          const MAX_HEIGHT = 128;
-          let width = img.width;
-          let height = img.height;
+          try {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 128;
+            const MAX_HEIGHT = 128;
+            let width = img.width;
+            let height = img.height;
 
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height *= MAX_WIDTH / width;
-              width = MAX_WIDTH;
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
             }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width *= MAX_HEIGHT / height;
-              height = MAX_HEIGHT;
-            }
-          }
 
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            setSelectedAvatar(dataUrl);
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+              setSelectedAvatar(dataUrl);
+              setPermissionError(null);
+            }
+          } catch (err) {
+            const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+            setPermissionError(msg);
+            if (showToast) showToast(msg, 'error');
           }
         };
         img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
+    } catch (err) {
+      const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+      setPermissionError(msg);
+      if (showToast) showToast(msg, 'error');
+    }
+  };
+
+  const handleOpenGallery = async () => {
+    setPermissionError(null);
+    try {
+      const hasPermission = await checkMediaPermission('gallery');
+      if (!hasPermission) {
+        const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+        setPermissionError(msg);
+        if (showToast) showToast(msg, 'error');
+        return;
+      }
+      if (galleryInputRef.current) {
+        galleryInputRef.current.click();
+      }
+    } catch (err) {
+      console.warn('Gallery permission error:', err);
+      const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+      setPermissionError(msg);
+      if (showToast) showToast(msg, 'error');
+    }
+  };
+
+  const handleOpenCamera = async () => {
+    setPermissionError(null);
+    try {
+      const hasPermission = await checkMediaPermission('camera');
+      if (!hasPermission) {
+        const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+        setPermissionError(msg);
+        if (showToast) showToast(msg, 'error');
+        return;
+      }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.click();
+      }
+    } catch (err) {
+      console.warn('Camera request error:', err);
+      const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+      setPermissionError(msg);
+      if (showToast) showToast(msg, 'error');
     }
   };
 
@@ -171,26 +293,80 @@ export default function FirstTimeSetup({ profile, onComplete }: FirstTimeSetupPr
 
         {/* Avatar selection */}
         <div className="space-y-3">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label className="text-[10px] font-bold text-amber-100/60 uppercase tracking-wider block font-sans">
-              Bir Avatar Seç
+              AVATAR VEYA FOTOĞRAF SEÇİN
             </label>
-            <div className="relative">
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Hidden Gallery Input */}
               <input
+                ref={galleryInputRef}
                 type="file"
                 accept="image/*"
-                id="first-avatar-upload"
                 className="hidden"
-                onChange={handleCustomAvatarUpload}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageFileSelected(file);
+                  e.target.value = '';
+                }}
               />
-              <label
-                htmlFor="first-avatar-upload"
-                className="text-[9.5px] bg-[#FAF6E9] hover:bg-[#F3EFE0] text-slate-900 font-black px-3 py-1.5 rounded-xl transition duration-150 cursor-pointer uppercase tracking-wider flex items-center gap-1 shadow-sm"
+
+              {/* Hidden Camera Input */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageFileSelected(file);
+                  e.target.value = '';
+                }}
+              />
+
+              {/* Fotoğraf Yükle (Galeri) Button */}
+              <button
+                type="button"
+                onClick={handleOpenGallery}
+                className="text-[9.5px] bg-[#FAF6E9] hover:bg-[#F3EFE0] active:scale-95 text-slate-900 font-black px-2.5 py-1.5 rounded-xl transition duration-150 cursor-pointer uppercase tracking-wider flex items-center gap-1 shadow-sm"
+                title="Galeriden Fotoğraf Yükle"
               >
-                <span>Fotoğraf Yükle 📸</span>
-              </label>
+                <ImageIcon size={12} className="text-slate-800" />
+                <span>Fotoğraf Yükle</span>
+              </button>
+
+              {/* Fotoğraf Çek (Kamera) Button */}
+              <button
+                type="button"
+                onClick={handleOpenCamera}
+                className="text-[9.5px] bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-2.5 py-1.5 rounded-xl transition duration-150 cursor-pointer uppercase tracking-wider flex items-center gap-1 shadow-sm"
+                title="Kamerayla Fotoğraf Çek"
+              >
+                <Camera size={12} className="text-slate-950" />
+                <span>Fotoğraf Çek</span>
+              </button>
             </div>
           </div>
+
+          {/* Permission Error Notification Banner */}
+          {permissionError && (
+            <div className="bg-rose-500/20 border border-rose-500/50 rounded-xl p-2.5 text-xs font-bold text-rose-300 flex items-center justify-between gap-2 animate-fade-in shadow-md">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm shrink-0">⚠️</span>
+                <span className="leading-tight">{permissionError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPermissionError(null)}
+                className="p-1 text-rose-300 hover:text-white transition shrink-0"
+                title="Uyarıyı kapat"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-6 gap-2 p-3 bg-black/30 rounded-2xl border border-white/5 max-h-32 overflow-y-auto">
             {selectedAvatar && isImageUrl(selectedAvatar) && (

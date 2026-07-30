@@ -827,83 +827,31 @@ async function startServer() {
   const wss = new WebSocketServer({ server, path: '/ws' });
   const connectedClients = new Map<WebSocket, any>();
 
-  // RADICAL CHANNEL / ROOM ARCHITECTURE FOR INDEPENDENT WORD LENGTH CHANNELS (Channel_3 to Channel_8)
-  interface ChannelSubscriber {
+  // GLOBAL RANDOM MATCHMAKING QUEUE (Single Pool)
+  interface GlobalQueueItem {
     ws: WebSocket;
     player: { id: string; name: string; avatarUrl: string };
     joinedAt: number;
-    isSearchingMatch: boolean;
   }
 
-  interface WordLengthChannel {
-    length: number;
-    channelName: string; // e.g. 'Channel_4'
-    subscribers: Map<WebSocket, ChannelSubscriber>;
-    matchmakingQueue: ChannelSubscriber[];
-  }
+  const globalMatchmakingQueue: GlobalQueueItem[] = [];
 
-  const channelsByLength: Record<number, WordLengthChannel> = {
-    3: { length: 3, channelName: 'Channel_3', subscribers: new Map(), matchmakingQueue: [] },
-    4: { length: 4, channelName: 'Channel_4', subscribers: new Map(), matchmakingQueue: [] },
-    5: { length: 5, channelName: 'Channel_5', subscribers: new Map(), matchmakingQueue: [] },
-    6: { length: 6, channelName: 'Channel_6', subscribers: new Map(), matchmakingQueue: [] },
-    7: { length: 7, channelName: 'Channel_7', subscribers: new Map(), matchmakingQueue: [] },
-    8: { length: 8, channelName: 'Channel_8', subscribers: new Map(), matchmakingQueue: [] },
-  };
-
-  function getChannel(length: number): WordLengthChannel | null {
-    return channelsByLength[length] || null;
+  function removeWsFromGlobalQueue(ws: WebSocket, playerId?: string) {
+    for (let i = globalMatchmakingQueue.length - 1; i >= 0; i--) {
+      const item = globalMatchmakingQueue[i];
+      if (
+        !item.ws ||
+        item.ws.readyState !== WebSocket.OPEN ||
+        item.ws === ws ||
+        (playerId && item.player?.id === playerId)
+      ) {
+        globalMatchmakingQueue.splice(i, 1);
+      }
+    }
   }
 
   function removeWsFromAllChannels(ws: WebSocket, playerId?: string) {
-    Object.values(channelsByLength).forEach((ch) => {
-      ch.subscribers.delete(ws);
-      if (playerId) {
-        for (const [sWs, subObj] of ch.subscribers.entries()) {
-          if (subObj.player?.id === playerId) {
-            ch.subscribers.delete(sWs);
-          }
-        }
-      }
-      for (let i = ch.matchmakingQueue.length - 1; i >= 0; i--) {
-        const item = ch.matchmakingQueue[i];
-        if (
-          !item.ws ||
-          item.ws.readyState !== WebSocket.OPEN ||
-          item.ws === ws ||
-          (playerId && item.player?.id === playerId)
-        ) {
-          ch.matchmakingQueue.splice(i, 1);
-        }
-      }
-    });
-  }
-
-  function subscribeToChannel(ws: WebSocket, player: { id: string; name: string; avatarUrl: string }, length: number): WordLengthChannel | null {
-    const channel = getChannel(length);
-    if (!channel) return null;
-
-    // 1. Unsubscribe socket from all other channels first to guarantee 100% channel isolation
-    removeWsFromAllChannels(ws, player.id);
-
-    const subscriber: ChannelSubscriber = {
-      ws,
-      player,
-      joinedAt: Date.now(),
-      isSearchingMatch: false
-    };
-
-    channel.subscribers.set(ws, subscriber);
-    console.log(`[Channel Manager] Player ${player.name} (${player.id}) subscribed to ${channel.channelName}. Total subscribers: ${channel.subscribers.size}`);
-
-    sendWs(ws, {
-      type: 'channel_subscribed',
-      channel: channel.channelName,
-      wordLength: length,
-      activeSubscribers: channel.subscribers.size
-    });
-
-    return channel;
+    removeWsFromGlobalQueue(ws, playerId);
   }
 
   interface MatchPlayer {
@@ -1372,6 +1320,174 @@ async function startServer() {
     }
   }, 1500);
 
+  // Concurrent & Race-Condition Safe Background Matchmaking Worker Loop
+  let isMatchmakingWorkerRunning = false;
+
+  function processMatchmakingWorker() {
+    if (isMatchmakingWorkerRunning) return;
+    if (globalMatchmakingQueue.length < 2) return;
+
+    isMatchmakingWorkerRunning = true;
+    try {
+      while (globalMatchmakingQueue.length >= 2) {
+        const sub1 = globalMatchmakingQueue.shift();
+        if (!sub1) break;
+
+        if (!sub1.ws || sub1.ws.readyState !== WebSocket.OPEN) {
+          continue;
+        }
+
+        const sub2 = globalMatchmakingQueue.shift();
+        if (!sub2) {
+          if (sub1.ws.readyState === WebSocket.OPEN) {
+            globalMatchmakingQueue.unshift(sub1);
+          }
+          break;
+        }
+
+        if (!sub2.ws || sub2.ws.readyState !== WebSocket.OPEN) {
+          if (sub1.ws.readyState === WebSocket.OPEN) {
+            globalMatchmakingQueue.unshift(sub1);
+          }
+          continue;
+        }
+
+        // Check if same player
+        if (sub1.player.id === sub2.player.id) {
+          if (sub2.ws.readyState === WebSocket.OPEN) {
+            globalMatchmakingQueue.unshift(sub2);
+          }
+          continue;
+        }
+
+        // Check if either player is already in an active match
+        let p1Active = false;
+        let p2Active = false;
+        for (const mObj of activeDuelMatches.values()) {
+          if (mObj.gameState === 'WAITING' || mObj.gameState === 'READY' || mObj.gameState === 'PLAYING') {
+            if (mObj.player1.id === sub1.player.id || mObj.player2.id === sub1.player.id) p1Active = true;
+            if (mObj.player1.id === sub2.player.id || mObj.player2.id === sub2.player.id) p2Active = true;
+          }
+        }
+        if (p1Active || p2Active) {
+          if (!p1Active && sub1.ws.readyState === WebSocket.OPEN) globalMatchmakingQueue.unshift(sub1);
+          if (!p2Active && sub2.ws.readyState === WebSocket.OPEN) globalMatchmakingQueue.unshift(sub2);
+          continue;
+        }
+
+        // Clean Firestore queue docs for both players
+        const qCols = ['matchmaking_queue', 'matchmaking_queue_3', 'matchmaking_queue_4', 'matchmaking_queue_5', 'matchmaking_queue_6', 'matchmaking_queue_7', 'matchmaking_queue_8'];
+        qCols.forEach(col => {
+          deleteDoc(doc(db, col, sub1.player.id)).catch(() => {});
+          deleteDoc(doc(db, col, sub2.player.id)).catch(() => {});
+        });
+
+        // 1. HARF UZUNLUĞUNU SUNUCU RASTGELE SEÇER (3 ile 8 arasında)
+        const matchLength = Math.floor(Math.random() * 6) + 3; // 3..8
+        const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const correctWord = turkishUpper(getRandomWord(matchLength, true));
+
+        const matchObj: ActiveDuelMatch = {
+          matchId,
+          wordLength: matchLength,
+          correctWord,
+          gameState: 'WAITING',
+          player1: {
+            id: sub1.player.id,
+            name: sub1.player.name,
+            avatarUrl: sub1.player.avatarUrl || '',
+            ws: sub1.ws,
+            connected: true,
+            attempts: [],
+            lastPingAt: Date.now()
+          },
+          player2: {
+            id: sub2.player.id,
+            name: sub2.player.name,
+            avatarUrl: sub2.player.avatarUrl || '',
+            ws: sub2.ws,
+            connected: true,
+            attempts: [],
+            lastPingAt: Date.now()
+          },
+          winner: null,
+          loser: null,
+          winReason: null,
+          createdAt: Date.now()
+        };
+
+        activeDuelMatches.set(matchId, matchObj);
+        socketToMatchIdMap.set(sub1.ws, matchId);
+        socketToMatchIdMap.set(sub2.ws, matchId);
+
+        console.log(`[MATCHMAKING WORKER] MATCH CREATED: ${matchId} | Random Length: ${matchLength} (${correctWord}) | ${matchObj.player1.name} vs ${matchObj.player2.name}`);
+
+        // Save initial match state to Firestore
+        const initialFirestoreMatch = {
+          id: matchId,
+          matchId,
+          wordLength: matchLength,
+          targetWord: correctWord,
+          correctWord,
+          gameState: 'WAITING',
+          status: 'waiting_ready',
+          createdAt: new Date().toISOString(),
+          player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
+          player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl },
+          players: {
+            [matchObj.player1.id]: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl, attempts: [], completed: false, won: false },
+            [matchObj.player2.id]: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl, attempts: [], completed: false, won: false }
+          },
+          isGameOver: false,
+          winner: null
+        };
+        setDoc(doc(db, 'matches', matchId), initialFirestoreMatch, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'rooms', matchId), initialFirestoreMatch, { merge: true }).catch(() => {});
+
+        // Broadcast notifications to both players
+        const matchPayload = {
+          type: 'match_found',
+          matchId,
+          gameState: 'WAITING',
+          wordLength: matchLength,
+          correctWord,
+          targetWord: correctWord,
+          player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
+          player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl }
+        };
+        sendWs(matchObj.player1.ws, matchPayload);
+        sendWs(matchObj.player2.ws, matchPayload);
+
+        const joinedPayload = { ...matchPayload, type: 'match_joined' };
+        sendWs(matchObj.player1.ws, joinedPayload);
+        sendWs(matchObj.player2.ws, joinedPayload);
+
+        matchObj.gameState = 'READY';
+        const readyPayload = { ...matchPayload, type: 'match_ready', gameState: 'READY' };
+        sendWs(matchObj.player1.ws, readyPayload);
+        sendWs(matchObj.player2.ws, readyPayload);
+
+        // Synchronized match start after countdown delay
+        setTimeout(() => {
+          if (matchObj.gameState === 'READY' || matchObj.gameState === 'WAITING') {
+            matchObj.gameState = 'PLAYING';
+            matchObj.startedAt = Date.now();
+            const startPayload = { ...readyPayload, type: 'match_start', gameState: 'PLAYING' };
+            sendWs(matchObj.player1.ws, startPayload);
+            sendWs(matchObj.player2.ws, startPayload);
+            setDoc(doc(db, 'matches', matchId), { gameState: 'PLAYING', status: 'playing' }, { merge: true }).catch(() => {});
+            setDoc(doc(db, 'rooms', matchId), { gameState: 'PLAYING', status: 'playing' }, { merge: true }).catch(() => {});
+            console.log(`[MATCHMAKING WORKER] Match ${matchId} is now PLAYING!`);
+          }
+        }, 2500);
+      }
+    } finally {
+      isMatchmakingWorkerRunning = false;
+    }
+  }
+
+  setInterval(processMatchmakingWorker, 100);
+
   function handlePlayerDisconnect(ws: WebSocket) {
     const client = connectedClients.get(ws);
     connectedClients.delete(ws);
@@ -1514,262 +1630,42 @@ async function startServer() {
         } else if (data.type === 'ping') {
           sendWs(ws, { type: 'pong' });
         } else if (data.type === 'subscribe_channel' || data.type === 'switch_channel') {
-          if (!data.wordLength || isNaN(Number(data.wordLength))) {
-            sendWs(ws, { type: 'error', message: 'Harf sayısı belirtilmedi.' });
-            return;
-          }
-          const length = Number(data.wordLength);
-          if (length < 3 || length > 8) {
-            sendWs(ws, { type: 'error', message: 'Geçersiz harf sayısı.' });
-            return;
-          }
+          const length = Number(data.wordLength) || 5;
           const existingClient = connectedClients.get(ws);
           const playerId = data.id || data.userId || data.playerId || data.uid || existingClient?.id || 'p_' + Date.now();
           const playerName = data.name || data.username || data.displayName || existingClient?.name || 'Oyuncu';
           const playerAvatar = data.avatarUrl || existingClient?.avatarUrl || '';
           const player = { id: playerId, name: playerName, avatarUrl: playerAvatar };
           connectedClients.set(ws, player);
-
-          subscribeToChannel(ws, player, length);
+          sendWs(ws, { type: 'channel_subscribed', wordLength: length });
         } else if (data.type === 'join_matchmaking' || data.type === 'find_match' || data.type === 'join_queue') {
-          if (!data.wordLength || isNaN(Number(data.wordLength))) {
-            console.warn('[Duel Server] Rejecting match join: missing or invalid wordLength in payload:', data);
-            sendWs(ws, { type: 'error', message: 'Harf sayısı belirtilmedi.' });
-            return;
-          }
-          const parsedRaw = Number(data.wordLength);
-          if (parsedRaw < 3 || parsedRaw > 8) {
-            console.warn('[Duel Server] Rejecting match join: wordLength out of bounds (3-8):', parsedRaw);
-            sendWs(ws, { type: 'error', message: 'Geçersiz harf sayısı.' });
-            return;
-          }
-          const length = parsedRaw;
-
           const existingClient = connectedClients.get(ws);
-          const playerId = data.id || data.userId || data.playerId || data.uid || existingClient?.id || 'p_' + Date.now();
-          const playerName = data.name || data.username || data.displayName || existingClient?.name || 'Oyuncu';
-          const playerAvatar = data.avatarUrl || existingClient?.avatarUrl || '';
-
-          const player = { id: playerId, name: playerName, avatarUrl: playerAvatar };
+          const player = {
+            id: data.id || data.userId || data.playerId || data.uid || existingClient?.id || 'p_' + Date.now(),
+            name: data.name || data.username || data.displayName || existingClient?.name || 'Oyuncu',
+            avatarUrl: data.avatarUrl || existingClient?.avatarUrl || ''
+          };
           connectedClients.set(ws, player);
 
-          // Unbind socket from any old matches
+          // 1. Oyuncunun eski kuyruk kayıtlarını global havuzdan temizle
+          removeWsFromGlobalQueue(ws, player.id);
+
+          // 2. Eski askıda/bitmiş maç bağlantılarını temizle
           socketToMatchIdMap.delete(ws);
           for (const [mId, mObj] of activeDuelMatches.entries()) {
             if (mObj.player1?.id === player.id || mObj.player2?.id === player.id || mObj.player1?.ws === ws || mObj.player2?.ws === ws) {
-              if (mObj.player1?.ws === ws) mObj.player1.ws = null;
-              if (mObj.player2?.ws === ws) mObj.player2.ws = null;
               if (mObj.gameState === 'FINISHED' || mObj.gameState === 'CANCELLED') {
+                activeDuelMatches.delete(mId);
+              } else {
+                mObj.gameState = 'CANCELLED';
                 activeDuelMatches.delete(mId);
               }
             }
           }
 
-          // 1. Oyuncuyu doğrudan Channel_<length> kanalına abone et (Varsa önceki kanallarından izole edilir)
-          const channel = subscribeToChannel(ws, player, length);
-          if (!channel) {
-            sendWs(ws, { type: 'error', message: 'Geçersiz harf kanalı.' });
-            return;
-          }
-
-          // 2. Eşleşme aramasını SADECE bu spesifik kanalın (Channel_<length>) aktif aboneleri arasında yürüt
-          let subscriber = channel.subscribers.get(ws);
-          if (!subscriber) {
-            subscriber = { ws, player, joinedAt: Date.now(), isSearchingMatch: true };
-            channel.subscribers.set(ws, subscriber);
-          } else {
-            subscriber.isSearchingMatch = true;
-          }
-
-          const isAlreadyInQueue = channel.matchmakingQueue.some(q => q.ws === ws || q.player?.id === player.id);
-          if (!isAlreadyInQueue) {
-            channel.matchmakingQueue.push(subscriber);
-          }
-
-          sendWs(ws, { type: 'queued', channel: channel.channelName, wordLength: length });
-
-          // 3. EĞER BU KANALDA YETERLİ OYUNCU (EN AZ 2 KİŞİ) YOKSA STOP ET! (Aşağı kaymasını engelle)
-          if (channel.matchmakingQueue.length < 2) {
-            return;
-          }
-
-          // 4. Havuzda en az 2 kişi varsa SADECE BU KANALIN KUYRUĞUNDAN 2 kişiyi çıkar
-          const sub1 = channel.matchmakingQueue.shift()!;
-          const sub2 = channel.matchmakingQueue.shift()!;
-
-          // Ensure both sockets are open before building match
-          if (!sub1.ws || sub1.ws.readyState !== WebSocket.OPEN) {
-            if (sub2.ws && sub2.ws.readyState === WebSocket.OPEN) {
-              channel.matchmakingQueue.unshift(sub2);
-            }
-            return;
-          }
-          if (!sub2.ws || sub2.ws.readyState !== WebSocket.OPEN) {
-            channel.matchmakingQueue.unshift(sub1);
-            return;
-          }
-
-          // Güvenlik 1: Aynı oyuncu kendisiyle eşleşemez
-          if (sub1.player.id === sub2.player.id) {
-            console.warn(`[MATCH ERROR] Aynı oyuncu ID'si (${sub1.player.id}) tespit edildi, ikinci istek iptal edildi.`);
-            channel.matchmakingQueue.unshift(sub2);
-            return;
-          }
-
-          // Güvenlik 2: Oyunculardan biri zaten aktif bir maçta mı kontrol et
-          let p1Active = false;
-          let p2Active = false;
-          for (const mObj of activeDuelMatches.values()) {
-            if (mObj.gameState === 'WAITING' || mObj.gameState === 'READY' || mObj.gameState === 'PLAYING') {
-              if (mObj.player1.id === sub1.player.id || mObj.player2.id === sub1.player.id) p1Active = true;
-              if (mObj.player1.id === sub2.player.id || mObj.player2.id === sub2.player.id) p2Active = true;
-            }
-          }
-          if (p1Active || p2Active) {
-            console.warn(`[MATCH ERROR] Oyculardan biri zaten aktif bir maçta (p1Active: ${p1Active}, p2Active: ${p2Active}). Eşleşme iptal edildi.`);
-            if (!p1Active && sub1.ws.readyState === WebSocket.OPEN) channel.matchmakingQueue.unshift(sub1);
-            if (!p2Active && sub2.ws.readyState === WebSocket.OPEN) channel.matchmakingQueue.unshift(sub2);
-            return;
-          }
-
-          sub1.isSearchingMatch = false;
-          sub2.isSearchingMatch = false;
-
-          // KURALLAR GEREĞİ: Eşleşen iki oyuncu da ANINDA bütün matchmaking kuyruklarından ve kanallarından tamamen silinir
-          removeWsFromAllChannels(sub1.ws, sub1.player.id);
-          removeWsFromAllChannels(sub2.ws, sub2.player.id);
-
-          // Firestore üzerindeki bekleme kayıtlarını da anında temizle
-          const qCols = ['matchmaking_queue', 'matchmaking_queue_3', 'matchmaking_queue_4', 'matchmaking_queue_5', 'matchmaking_queue_6', 'matchmaking_queue_7', 'matchmaking_queue_8'];
-          qCols.forEach(col => {
-            deleteDoc(doc(db, col, sub1.player.id)).catch(() => {});
-            deleteDoc(doc(db, col, sub2.player.id)).catch(() => {});
-          });
-
-          const p1Item = { ws: sub1.ws, player: sub1.player, wordLength: length };
-          const p2Item = { ws: sub2.ws, player: sub2.player, wordLength: length };
-
-          // 5. Ekstra Güvenlik: İki oyuncunun harf sayıları eşit değilse maçı KESİNLİKLE başlatma
-          if (p1Item.wordLength !== p2Item.wordLength || p1Item.wordLength !== length) {
-            console.warn(`[MATCH ERROR] Farklı harf sayıları veya kanal uyuşmazlığı tespit edildi, işlem iptal edildi.`);
-            return;
-          }
-
-          const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-          const correctWord = turkishUpper(getRandomWord(length, true));
-
-          const matchObj: ActiveDuelMatch = {
-            matchId,
-            wordLength: length,
-            correctWord,
-            gameState: 'WAITING',
-            player1: {
-              id: p1Item.player.id,
-              name: p1Item.player.name,
-              avatarUrl: p1Item.player.avatarUrl || '',
-              ws: p1Item.ws,
-              connected: true,
-              attempts: [],
-              lastPingAt: Date.now()
-            },
-            player2: {
-              id: p2Item.player.id,
-              name: p2Item.player.name,
-              avatarUrl: p2Item.player.avatarUrl || '',
-              ws: p2Item.ws,
-              connected: true,
-              attempts: [],
-              lastPingAt: Date.now()
-            },
-            winner: null,
-            loser: null,
-            winReason: null,
-            createdAt: Date.now()
-          };
-
-          activeDuelMatches.set(matchId, matchObj);
-          socketToMatchIdMap.set(p1Item.ws, matchId);
-          socketToMatchIdMap.set(p2Item.ws, matchId);
-
-          console.log(`[Duel Server] MATCH CREATED: ${matchId} (${length} letters) | ${matchObj.player1.name} vs ${matchObj.player2.name}. Target Word: ${correctWord}`);
-
-          // Persist match to Firestore database instantly
-          const initialFirestoreMatch = {
-            id: matchId,
-            matchId,
-            wordLength: length,
-            targetWord: correctWord,
-            correctWord,
-            gameState: 'WAITING',
-            status: 'waiting_ready',
-            createdAt: new Date().toISOString(),
-            player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
-            player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl },
-            players: {
-              [matchObj.player1.id]: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl, attempts: [], completed: false, won: false },
-              [matchObj.player2.id]: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl, attempts: [], completed: false, won: false }
-            },
-            isGameOver: false,
-            winner: null
-          };
-          setDoc(doc(db, 'matches', matchId), initialFirestoreMatch, { merge: true }).catch(err => {
-            console.error('[Duel Server] Failed to save match to Firestore:', err);
-          });
-          setDoc(doc(db, 'rooms', matchId), initialFirestoreMatch, { merge: true }).catch(err => {
-            console.error('[Duel Server] Failed to save room to Firestore:', err);
-          });
-
-          // State 1: WAITING
-          const waitingPayload = {
-            type: 'match_joined',
-            matchId,
-            gameState: 'WAITING',
-            wordLength: length,
-            correctWord,
-            targetWord: correctWord,
-            player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
-            player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl }
-          };
-          sendWs(matchObj.player1.ws, waitingPayload);
-          sendWs(matchObj.player2.ws, waitingPayload);
-
-          // State 2: READY
-          matchObj.gameState = 'READY';
-          const readyPayload = {
-            type: 'match_ready',
-            matchId,
-            gameState: 'READY',
-            wordLength: length,
-            correctWord,
-            targetWord: correctWord,
-            player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
-            player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl }
-          };
-          sendWs(matchObj.player1.ws, readyPayload);
-          sendWs(matchObj.player2.ws, readyPayload);
-
-          // State 3: PLAYING (Synchronized start)
-          setTimeout(() => {
-            if (matchObj.gameState === 'READY' || matchObj.gameState === 'WAITING') {
-              matchObj.gameState = 'PLAYING';
-              matchObj.startedAt = Date.now();
-              const startPayload = {
-                type: 'match_start',
-                matchId,
-                gameState: 'PLAYING',
-                wordLength: length,
-                correctWord,
-                targetWord: correctWord,
-                player1: { id: matchObj.player1.id, name: matchObj.player1.name, avatarUrl: matchObj.player1.avatarUrl },
-                player2: { id: matchObj.player2.id, name: matchObj.player2.name, avatarUrl: matchObj.player2.avatarUrl }
-              };
-              sendWs(matchObj.player1.ws, startPayload);
-              sendWs(matchObj.player2.ws, startPayload);
-              setDoc(doc(db, 'matches', matchId), { gameState: 'PLAYING', status: 'playing' }, { merge: true }).catch(() => {});
-              setDoc(doc(db, 'rooms', matchId), { gameState: 'PLAYING', status: 'playing' }, { merge: true }).catch(() => {});
-              console.log(`[Duel Server] Match ${matchId} is now PLAYING!`);
-            }
-          }, 2500);
+          // 3. Doğrudan tek global havuz dizisine (global queue) ekle
+          globalMatchmakingQueue.push({ ws, player, joinedAt: Date.now() });
+          sendWs(ws, { type: 'queued' });
         } else if (data.type === 'leave_matchmaking') {
           const existingClient = connectedClients.get(ws);
           removeWsFromAllChannels(ws, data.id || existingClient?.id);

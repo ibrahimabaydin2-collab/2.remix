@@ -262,11 +262,50 @@ export function createOrMergeProfile(
   let mergedId = primary?.id || fallbackProfiles.find(p => p?.id)?.id || `user_${Math.random().toString(36).substring(2, 11)}`;
   let mergedName = '';
   let mergedAvatarUrl = '🧠';
-  let mergedGold = 20;
+  let mergedGold: number | null = null;
   let mergedDailyScore = 0;
   let mergedNameSet = false;
   let mergedDeviceId = '';
   let mergedLastDailyLoginClaim = '';
+  
+  // 1. Check if local storage has a stored gold value
+  let localGold: number | null = null;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const gStr = window.localStorage.getItem('kelimesavasi_gold');
+      if (gStr !== null && !isNaN(parseInt(gStr, 10))) {
+        localGold = parseInt(gStr, 10);
+      }
+    }
+  } catch (e) {}
+
+  // 2. Select gold from profile with the most recent lastUpdated timestamp
+  let newestTimestamp = -1;
+  let newestGold: number | null = null;
+
+  for (const p of allProfiles) {
+    if (typeof p.gold === 'number' && !isNaN(p.gold)) {
+      const ts = p.lastUpdated ? new Date(p.lastUpdated).getTime() : 0;
+      if (ts > newestTimestamp || newestGold === null) {
+        newestTimestamp = ts;
+        newestGold = p.gold;
+      }
+    }
+  }
+
+  // Prioritize localGold or newest timestamp over default 20
+  if (localGold !== null) {
+    const primaryTs = primary?.lastUpdated ? new Date(primary.lastUpdated).getTime() : 0;
+    if (primary && typeof primary.gold === 'number' && primaryTs > newestTimestamp) {
+      mergedGold = primary.gold;
+    } else {
+      mergedGold = localGold;
+    }
+  } else if (newestGold !== null) {
+    mergedGold = newestGold;
+  } else {
+    mergedGold = 20; // Default starting gold for brand new profiles
+  }
   
   const mergedStats = { ...DEFAULT_STATS };
   const mergedWordLengthStats = { ...DEFAULT_WORD_LENGTH_STATS };
@@ -287,9 +326,6 @@ export function createOrMergeProfile(
     if (p.deviceId) mergedDeviceId = p.deviceId;
     if (p.lastDailyLoginClaim) mergedLastDailyLoginClaim = p.lastDailyLoginClaim;
 
-    if (typeof p.gold === 'number') {
-      mergedGold = Math.max(mergedGold, p.gold);
-    }
     if (typeof p.dailyScore === 'number') {
       mergedDailyScore = Math.max(mergedDailyScore, p.dailyScore);
     }
@@ -572,6 +608,9 @@ export async function saveUserProfileToFirestore(profile: UserProfile): Promise<
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem('kelimesavasi_profile', JSON.stringify(effectiveProfile));
+        if (typeof effectiveProfile.gold === 'number' && !isNaN(effectiveProfile.gold)) {
+          window.localStorage.setItem('kelimesavasi_gold', effectiveProfile.gold.toString());
+        }
         const resolvedName = effectiveProfile.name || (effectiveProfile as any).username || (effectiveProfile as any).displayName;
         if (resolvedName) {
           window.localStorage.setItem('saved_username', resolvedName.trim());

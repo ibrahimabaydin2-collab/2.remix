@@ -4,7 +4,7 @@ import {
   Trophy, Users, HelpCircle, ChevronDown, ChevronUp, 
   Copy, Check, Flame, Zap, Target, Edit2, User, Award, CheckCircle2, TrendingUp,
   Sun, Moon, Sliders, BarChart2, X, ArrowLeft, UserPlus, UserMinus, Clock, Puzzle,
-  Bot
+  Bot, Camera, Image as ImageIcon
 } from 'lucide-react';
 import { UserProfile, isImageUrl } from '../types';
 import { getBaseUrl } from '../utils/api';
@@ -41,6 +41,7 @@ interface WelcomeScreenProps {
   onOpenMissions?: () => void;
   isOnline: boolean;
   lobbyPlayers?: { id: string; name: string; avatarUrl?: string }[];
+  showToast?: (message: string, type?: 'info' | 'error' | 'success') => void;
   
   // New Header integration props
   onOpenStats?: () => void;
@@ -78,6 +79,7 @@ export default function WelcomeScreen({
   onOpenMissions,
   isOnline,
   lobbyPlayers = [],
+  showToast,
   onReconnect,
   onOpenStats,
   darkMode,
@@ -497,6 +499,167 @@ export default function WelcomeScreen({
   const [isTouched, setIsTouched] = useState<boolean>(false);
   const [dbUsernameError, setDbUsernameError] = useState<string | null>(null);
   const [isCheckingName, setIsCheckingName] = useState<boolean>(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+
+  const checkMediaPermission = async (type: 'camera' | 'gallery'): Promise<boolean> => {
+    // 1. Capacitor Camera Plugin Check (if running in hybrid / native Capacitor environment)
+    if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+      const cameraPlugin = (window as any).Capacitor?.Plugins?.Camera;
+      if (cameraPlugin && typeof cameraPlugin.checkPermissions === 'function') {
+        try {
+          let status = await cameraPlugin.checkPermissions();
+          if (type === 'camera' && (status?.camera === 'prompt' || status?.camera === 'prompt-with-rationale')) {
+            status = await cameraPlugin.requestPermissions({ permissions: ['camera'] });
+          } else if (type === 'gallery' && (status?.photos === 'prompt' || status?.photos === 'prompt-with-rationale')) {
+            status = await cameraPlugin.requestPermissions({ permissions: ['photos'] });
+          }
+          
+          const isDenied = type === 'camera' 
+            ? status?.camera === 'denied' 
+            : status?.photos === 'denied';
+
+          if (isDenied) {
+            return false;
+          }
+        } catch (err) {
+          console.warn('Capacitor camera permission check warning:', err);
+        }
+      }
+    }
+
+    // 2. Web navigator.permissions API
+    if (typeof navigator !== 'undefined' && navigator.permissions && typeof (navigator.permissions as any).query === 'function') {
+      try {
+        const permName = type === 'camera' ? 'camera' : 'photos';
+        const res = await (navigator.permissions as any).query({ name: permName });
+        if (res.state === 'denied') {
+          return false;
+        }
+      } catch (e) {
+        // Permission query descriptor for camera/photos might not be supported on all desktop/mobile browsers
+      }
+    }
+
+    // 3. Web getUserMedia test for camera
+    if (type === 'camera' && typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (camErr: any) {
+        console.warn('Camera permission denied or error:', camErr);
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const handleImageFileSelected = (file: File) => {
+    if (!file) return;
+    setPermissionError(null);
+    try {
+      const reader = new FileReader();
+      reader.onerror = () => {
+        const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+        setPermissionError(msg);
+        if (showToast) showToast(msg, 'error');
+      };
+      reader.onloadend = () => {
+        const img = new window.Image();
+        img.onerror = () => {
+          const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+          setPermissionError(msg);
+          if (showToast) showToast(msg, 'error');
+        };
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 128;
+            const MAX_HEIGHT = 128;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+              setSelectedAvatar(dataUrl);
+              setPermissionError(null);
+            }
+          } catch (err) {
+            const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+            setPermissionError(msg);
+            if (showToast) showToast(msg, 'error');
+          }
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+      setPermissionError(msg);
+      if (showToast) showToast(msg, 'error');
+    }
+  };
+
+  const handleOpenGallery = async () => {
+    setPermissionError(null);
+    try {
+      const hasPermission = await checkMediaPermission('gallery');
+      if (!hasPermission) {
+        const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+        setPermissionError(msg);
+        if (showToast) showToast(msg, 'error');
+        return;
+      }
+      if (galleryInputRef.current) {
+        galleryInputRef.current.click();
+      }
+    } catch (err) {
+      console.warn('Gallery permission error:', err);
+      const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+      setPermissionError(msg);
+      if (showToast) showToast(msg, 'error');
+    }
+  };
+
+  const handleOpenCamera = async () => {
+    setPermissionError(null);
+    try {
+      const hasPermission = await checkMediaPermission('camera');
+      if (!hasPermission) {
+        const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+        setPermissionError(msg);
+        if (showToast) showToast(msg, 'error');
+        return;
+      }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.click();
+      }
+    } catch (err) {
+      console.warn('Camera request error:', err);
+      const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
+      setPermissionError(msg);
+      if (showToast) showToast(msg, 'error');
+    }
+  };
   const error = (isTouched || editName !== profile?.name ? validateUsername(editName, [], profile?.id || '') : null) || dbUsernameError;
 
   React.useEffect(() => {
@@ -574,6 +737,7 @@ export default function WelcomeScreen({
     const range = nextLevelScore - currentLevelScore;
     const progressInLevel = score - currentLevelScore;
     const percent = range > 0 ? Math.min(100, Math.max(0, (progressInLevel / range) * 100)) : 100;
+    const remainingForNextLevel = Math.max(0, Math.round(nextLevelScore - score));
 
     // Derive title
     let title = 'Kelime Kaşifi 🔍';
@@ -596,7 +760,8 @@ export default function WelcomeScreen({
       nextLevelScore: Math.round(nextLevelScore),
       percent,
       progressInLevel: Math.round(progressInLevel),
-      range: Math.round(range)
+      range: Math.round(range),
+      remainingForNextLevel
     };
   };
 
@@ -847,41 +1012,18 @@ export default function WelcomeScreen({
                     <span>{isOnline ? 'ONLINE CANLI' : 'BAĞLANTI YOK / ÇEVRİMDIŞI'}</span>
                   </button>
                 </div>
-
-                {/* Word Length Selector for Duels */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[9px] font-black text-amber-300/80 font-mono tracking-wider uppercase block">DÜELLO HARF SAYISI</span>
-                    <span className="text-[10px] font-mono text-amber-400 font-bold">{currentDuelWordLength} Harf</span>
-                  </div>
-                  <div className="grid grid-cols-6 gap-1 p-0.5 bg-black/35 rounded-xl border border-white/5">
-                    {[3, 4, 5, 6, 7, 8].map((len) => (
-                      <button
-                        key={len}
-                        onClick={() => handleDuelWordLengthChange(len)}
-                        className={`py-1.5 rounded-lg text-xs font-black transition-all duration-200 active:scale-90 cursor-pointer ${
-                          currentDuelWordLength === len
-                            ? 'bg-amber-400 text-slate-950 shadow-sm font-black'
-                            : 'text-[#FAF6E9]/75 hover:bg-white/5 hover:text-white'
-                        }`}
-                      >
-                        {len}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               {/* Duel Mode Info Box */}
-              <div className="bg-black/35 border border-white/5 rounded-2xl p-3 text-left space-y-0.5 relative overflow-hidden" id="duel-info-panel">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  <span className="text-[9px] font-black text-amber-300 uppercase tracking-widest font-mono">
+              <div className="bg-black/40 border border-amber-500/25 rounded-2xl p-3.5 sm:p-4 text-left space-y-1.5 relative overflow-hidden shadow-inner" id="duel-info-panel">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                  <span className="text-xs sm:text-sm font-black text-amber-300 uppercase tracking-widest font-mono">
                     CANLI 1v1 DÜELLO KURALLARI
                   </span>
                 </div>
-                <p className="text-[11px] text-gray-300 leading-snug font-sans">
-                  Gerçek zamanlı bir rakiple aynı gizli kelimeyi en az denemede ve en hızlı şekilde tahmin etmek için yarışın.
+                <p className="text-xs sm:text-sm text-gray-100 leading-relaxed font-sans font-medium">
+                  Oyuna başla butonuna bastığınızda sistem sizi anında rastgele bir rakiple eşleştirir. Her iki oyuncu da aynı kelimeyi en hızlı şekilde tahmin etmeye çalışır. En hızlı ve doğru tahminleri yapan oyunu kazanır.
                 </p>
               </div>
 
@@ -890,11 +1032,11 @@ export default function WelcomeScreen({
                 <div className="w-full bg-amber-950/60 border border-amber-500/50 rounded-2xl p-4 flex flex-col items-center gap-2 text-center shadow-lg">
                   <div className="flex items-center gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wider">
                     <Swords size={20} className="animate-spin text-amber-400" />
-                    <span>RAKİP ARANIYOR ({currentDuelWordLength} HARF)...</span>
+                    <span>RAKİP ARANIYOR...</span>
                   </div>
                   <p className="text-[10px] text-amber-200/80 font-bold">Lütfen bekleyin, uygun bir rakip eşleştiriliyor.</p>
                   <button
-                    onClick={() => onStartMatchmaking && onStartMatchmaking(currentDuelWordLength)}
+                    onClick={() => onStartMatchmaking && onStartMatchmaking()}
                     className="mt-1 text-xs font-black text-rose-300 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 px-4 py-2 rounded-xl uppercase tracking-wider transition cursor-pointer active:scale-95 shadow-sm"
                     id="cancel-matchmaking-setup-btn"
                   >
@@ -905,7 +1047,7 @@ export default function WelcomeScreen({
                 <button
                   onClick={() => {
                     if (onStartMatchmaking) {
-                      onStartMatchmaking(currentDuelWordLength);
+                      onStartMatchmaking();
                     }
                   }}
                   className="w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 active:scale-[0.98] text-slate-950 py-3.5 px-4 rounded-2xl shadow-[0_4px_0_#D97706,0_8px_20px_rgba(245,158,11,0.35)] transition-all flex items-center justify-between uppercase tracking-wider cursor-pointer border border-amber-200/40"
@@ -916,12 +1058,12 @@ export default function WelcomeScreen({
                       <Swords size={20} className="text-slate-950 stroke-[2.5]" />
                     </div>
                     <div className="text-left leading-tight">
-                      <span className="font-black text-slate-950 text-sm tracking-wide block">CANLI DÜELLO ARA</span>
+                      <span className="font-black text-slate-950 text-sm tracking-wide block">OYUNA BAŞLA</span>
                       <span className="block text-[9.5px] font-bold text-slate-900/80 font-sans normal-case mt-0.5">Online 1v1 Rakip Bul</span>
                     </div>
                   </div>
                   <div className="px-3 py-1.5 bg-slate-950 text-amber-300 text-[10px] font-black rounded-xl uppercase tracking-widest flex items-center gap-1 shadow-sm">
-                    <span>1 Altın 🪙</span>
+                    <span>2 Altın 🪙</span>
                     <Play size={10} className="fill-current" />
                   </div>
                 </button>
@@ -950,62 +1092,80 @@ export default function WelcomeScreen({
 
       {/* Avatar Selector Grid */}
       <div className="space-y-3 text-left">
-        <div className="flex justify-between items-center">
-          <label className="text-[10px] font-bold text-amber-100/60 uppercase tracking-wider block font-sans">BİR AVATAR SEÇİN</label>
-          <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <label className="text-[10px] font-bold text-amber-100/60 uppercase tracking-wider block font-sans">
+            AVATAR VEYA FOTOĞRAF SEÇİN
+          </label>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Hidden Gallery Input */}
             <input
+              ref={galleryInputRef}
               type="file"
               accept="image/*"
-              id="custom-avatar-upload"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    const img = new Image();
-                    img.onload = () => {
-                      const canvas = document.createElement('canvas');
-                      const MAX_WIDTH = 128;
-                      const MAX_HEIGHT = 128;
-                      let width = img.width;
-                      let height = img.height;
-
-                      if (width > height) {
-                        if (width > MAX_WIDTH) {
-                          height *= MAX_WIDTH / width;
-                          width = MAX_WIDTH;
-                        }
-                      } else {
-                        if (height > MAX_HEIGHT) {
-                          width *= MAX_HEIGHT / height;
-                          height = MAX_HEIGHT;
-                        }
-                      }
-
-                      canvas.width = width;
-                      canvas.height = height;
-                      const ctx = canvas.getContext('2d');
-                      if (ctx) {
-                        ctx.drawImage(img, 0, 0, width, height);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                        setSelectedAvatar(dataUrl);
-                      }
-                    };
-                    img.src = reader.result as string;
-                  };
-                  reader.readAsDataURL(file);
-                }
+                if (file) handleImageFileSelected(file);
+                e.target.value = '';
               }}
             />
-            <label
-              htmlFor="custom-avatar-upload"
-              className="text-[9.5px] bg-[#FAF6E9] hover:bg-[#F3EFE0] text-slate-900 font-black px-3 py-1.5 rounded-xl transition duration-150 cursor-pointer uppercase tracking-wider flex items-center gap-1 shadow-sm"
+
+            {/* Hidden Camera Input */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImageFileSelected(file);
+                e.target.value = '';
+              }}
+            />
+
+            {/* Fotoğraf Yükle (Galeri) Button */}
+            <button
+              type="button"
+              onClick={handleOpenGallery}
+              className="text-[9.5px] bg-[#FAF6E9] hover:bg-[#F3EFE0] active:scale-95 text-slate-900 font-black px-2.5 py-1.5 rounded-xl transition duration-150 cursor-pointer uppercase tracking-wider flex items-center gap-1 shadow-sm"
+              title="Galeriden Fotoğraf Yükle"
             >
-              <span>Fotoğraf Yükle 📸</span>
-            </label>
+              <ImageIcon size={12} className="text-slate-800" />
+              <span>Fotoğraf Yükle</span>
+            </button>
+
+            {/* Fotoğraf Çek (Kamera) Button */}
+            <button
+              type="button"
+              onClick={handleOpenCamera}
+              className="text-[9.5px] bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-2.5 py-1.5 rounded-xl transition duration-150 cursor-pointer uppercase tracking-wider flex items-center gap-1 shadow-sm"
+              title="Kamerayla Fotoğraf Çek"
+            >
+              <Camera size={12} className="text-slate-950" />
+              <span>Fotoğraf Çek</span>
+            </button>
           </div>
         </div>
+
+        {/* Permission Error Notification Banner */}
+        {permissionError && (
+          <div className="bg-rose-500/20 border border-rose-500/50 rounded-xl p-2.5 text-xs font-bold text-rose-300 flex items-center justify-between gap-2 animate-fade-in shadow-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm shrink-0">⚠️</span>
+              <span className="leading-tight">{permissionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPermissionError(null)}
+              className="p-1 text-rose-300 hover:text-white transition shrink-0"
+              title="Uyarıyı kapat"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-6 gap-2 p-2.5 bg-black/30 rounded-2xl border border-white/5 max-h-32 overflow-y-auto">
           {selectedAvatar && isImageUrl(selectedAvatar) && (
@@ -1142,7 +1302,7 @@ export default function WelcomeScreen({
       {(() => {
         const progress = getLevelProgress(profile?.dailyScore || 0);
         return (
-          <div className="w-full bg-[#FAF6E9] border-2 border-[#EBE6D5] rounded-3xl p-4 sm:p-5 shadow-[0_5px_0_#D9D4C3,0_8px_16px_rgba(0,0,0,0.15)] flex flex-col gap-4 text-left relative z-10 overflow-hidden" id="unified-level-profile-card">
+          <div className="w-full bg-[#FAF6E9] border-2 border-[#EBE6D5] rounded-3xl p-4 sm:p-5 shadow-[0_5px_0_#D9D4C3,0_8px_16px_rgba(0,0,0,0.15)] flex flex-col gap-3.5 text-left relative z-10 overflow-hidden" id="unified-level-profile-card">
             
             {/* Elegant Vintage Double Border & Corner Ornaments */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none stroke-[#E2DCBF]/85 fill-none p-1" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -1154,53 +1314,72 @@ export default function WelcomeScreen({
               <path d="M 96.5 92 Q 92 92 92 96.5" strokeWidth="0.75" />
             </svg>
 
-            {/* Row 1: Brain Medallion + Name & Level */}
+            {/* Row 1: Avatar + Name & Level Title */}
             <div className="flex items-center justify-between gap-3 relative z-10">
               <div className="flex items-center gap-3.5">
-                {/* Clickable Avatar with a simple, elegant circular frame */}
+                {/* Clickable Avatar */}
                 <div 
-                  className="relative w-16 h-16 rounded-full bg-[#1A212D] border-2 border-amber-500/50 flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-300 hover:scale-105 cursor-pointer"
+                  className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#1A212D] border-2 border-amber-500/50 flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-300 hover:scale-105 cursor-pointer shadow-md"
                   onClick={() => setIsEditing(true)}
+                  title="Profil resmini değiştir"
                 >
                   {profile?.avatarUrl && isImageUrl(profile.avatarUrl) ? (
                      <img src={profile.avatarUrl} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                     <span className="text-3xl select-none">{profile?.avatarUrl || '🧠'}</span>
+                     <span className="text-2xl sm:text-3xl select-none">{profile?.avatarUrl || '🧠'}</span>
                   )}
                 </div>
 
                 <div className="flex flex-col">
-                  {/* Name: "Art" */}
-                  <span className="text-2xl sm:text-3xl font-serif tracking-wide text-[#2E3748] font-bold leading-tight">{profile?.name || 'Oyuncu'}</span>
-                  {/* Level: "1. SEVİYE" */}
-                  <span className="text-[11px] sm:text-xs font-black text-[#C59B27] font-mono tracking-wider uppercase mt-1">
+                  {/* Player Name */}
+                  <span className="text-xl sm:text-2xl font-serif tracking-wide text-[#2E3748] font-bold leading-tight truncate">
+                    {profile?.name || 'Oyuncu'}
+                  </span>
+                  {/* Level Badge */}
+                  <span className="text-[11px] sm:text-xs font-black text-[#C59B27] font-mono tracking-wider uppercase mt-0.5">
                     {progress.level}. SEVİYE
                   </span>
                 </div>
               </div>
+
+              {/* Edit Icon Button */}
+              <button
+                onClick={() => setIsEditing(true)}
+                className="p-2 rounded-xl bg-[#E2DCBF]/40 hover:bg-[#E2DCBF] text-[#2E3748] transition-all cursor-pointer border border-[#E2DCBF]/80 active:scale-95"
+                title="Profili Düzenle"
+              >
+                <Edit2 size={16} />
+              </button>
             </div>
 
-            {/* Progress Bar with 0 P and 25 P limits */}
-            <div className="w-full relative z-10 mt-1">
-              <div className="w-full bg-slate-200/60 h-2 rounded-full overflow-hidden p-0.5 border border-slate-300/30">
-                <div 
-                  style={{ width: `${progress.percent}%` }}
-                  className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full transition-all duration-1000 ease-out shadow-[0_0_4px_rgba(245,158,11,0.2)]"
-                />
-              </div>
-              <div className="flex justify-between text-[9px] font-black text-gray-500 font-mono mt-1.5 px-0.5 leading-none">
-                <span>0 P</span>
-                <span>{progress.level < 500 ? `${progress.range} P` : '∞'}</span>
-              </div>
-
-              {/* Güncel Toplam Puan Göstergesi */}
-              <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-[#E2DCBF]/80 text-xs font-bold text-[#2E3748]">
-                <span className="flex items-center gap-1.5 text-slate-600 font-semibold text-[11px] sm:text-xs">
-                  <span className="text-amber-500 text-sm">⭐</span> Güncel Toplam Puan:
-                </span>
-                <span className="font-mono font-black text-amber-700 text-xs sm:text-sm bg-amber-100/90 px-2.5 py-0.5 rounded-lg border border-amber-300/70 shadow-xs">
+            {/* Simplified Puan ve Seviye Alanı */}
+            <div className="w-full relative z-10 flex flex-col gap-2 pt-2.5 border-t border-[#E2DCBF]/80">
+              {/* 1. Ekranın üst kısmında oyuncunun güncel toplam puanını net bir şekilde gösteren tek ana puan alanı */}
+              <div className="flex items-center justify-between bg-[#F3EFE0] border border-[#E2DCBF] rounded-2xl px-3.5 py-2 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-500 text-sm sm:text-base">⭐</span>
+                  <span className="text-xs sm:text-sm font-bold text-[#2E3748]">Güncel Toplam Puan</span>
+                </div>
+                <span className="font-mono font-black text-amber-700 text-xs sm:text-sm bg-amber-100/90 px-2.5 py-1 rounded-xl border border-amber-300/80 shadow-xs">
                   {profile?.dailyScore || 0} Puan
                 </span>
+              </div>
+
+              {/* 2. Hemen altında sadece seviye ilerleme çubuğu */}
+              <div className="w-full bg-slate-200/80 h-3 rounded-full overflow-hidden p-0.5 border border-slate-300/40 mt-1">
+                <div 
+                  style={{ width: `${progress.percent}%` }}
+                  className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 rounded-full transition-all duration-700 ease-out shadow-[0_0_6px_rgba(245,158,11,0.3)]"
+                />
+              </div>
+
+              {/* 3. Çubuğun altında sonraki seviyeye geçmek için kalan puan bilgisi */}
+              <div className="text-center text-[11px] sm:text-xs font-semibold text-slate-600 font-sans mt-0.5">
+                {progress.level < 500 ? (
+                  <span>Sonraki seviyeye geçmek için <strong className="text-amber-700 font-mono font-black">{progress.remainingForNextLevel}</strong> puan kaldı</span>
+                ) : (
+                  <span className="text-amber-600 font-extrabold">Maksimum Seviyeye Ulaşıldı! 👑</span>
+                )}
               </div>
             </div>
           </div>
@@ -1544,8 +1723,8 @@ export default function WelcomeScreen({
                   <Swords size={14} />
                   <span>5. Canlı Düellolar</span>
                 </div>
-                <p className="text-[11px] leading-normal text-gray-300">
-                  Arkadaşlarınızla lobide buluşarak veya rastgele eşleşme ile canlı düello başlatabilirsiniz. İki taraf da aynı gizli kelimeyi çözmeye çalışır. Kelimeyi en az denemede ve en kısa sürede çözen taraf düelloyu kazanır!
+                <p className="text-xs text-gray-200 leading-relaxed font-sans">
+                  Oyuna başla butonuna bastığınızda sistem sizi anında rastgele bir rakiple eşleştirir. Her iki oyuncu da aynı kelimeyi en hızlı şekilde tahmin etmeye çalışır. En hızlı ve doğru tahminleri yapan oyunu kazanır.
                 </p>
               </div>
             </div>
@@ -1675,11 +1854,11 @@ export default function WelcomeScreen({
               RAKİP ARANIYOR...
             </h3>
             <p className="text-xs text-gray-300 leading-relaxed mb-6">
-              {currentDuelWordLength} harfli canlı düello için rakip bekleniyor. Rakip eşleştiği anda oyun iki oyuncu için de aynı anda başlayacaktır.
+              Canlı düello için rakip bekleniyor. Rakip eşleştiği anda kelime uzunluğu (3-8 harf) rastgele belirlenerek oyun iki oyuncu için de aynı anda başlayacaktır.
             </p>
 
             <button
-              onClick={() => onStartMatchmaking && onStartMatchmaking(currentDuelWordLength)}
+              onClick={() => onStartMatchmaking && onStartMatchmaking()}
               className="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer active:scale-95 shadow-md"
               id="cancel-matchmaking-overlay-btn"
             >
