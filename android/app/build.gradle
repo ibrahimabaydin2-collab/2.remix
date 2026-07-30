@@ -7,10 +7,10 @@ android {
         applicationId "com.kelimesavasi.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "1.0.10"
+        versionCode 11
+        versionName "1.0.11"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        // Force complete clean rebuild stamp: 2026-07-30 v1.0.10 pure vector assets clean sweep
+        // Force complete clean rebuild stamp: 2026-07-30 v1.0.11 game theme cream vector icon rebuild
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
