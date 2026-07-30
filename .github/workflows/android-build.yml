@@ -41,11 +41,6 @@ jobs:
             npx cap add android
           fi
           
-          # Overwrite all PNG launcher icons and splash screens with pristine template binaries
-          # to completely bypass any potential Git line-ending or binary file corruptions on the runner.
-          echo "Restoring pristine PNG resources from Capacitor CLI template..."
-          tar -xf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android --wildcards "app/src/main/res/**/*.png"
-          
           # Forcefully download a fresh Gradle distribution and regenerate gradle wrapper to bypass any git line ending corruption of binary files
           echo "Downloading fresh Gradle 8.14.3 binary..."
           wget -q https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
