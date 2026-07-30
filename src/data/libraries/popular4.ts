@@ -1,4 +1,4 @@
-// Isolated 4-letter popular Turkish words library
+// Cleaned Turkish words library
 export const POPULAR_4: readonly string[] = Object.freeze([
   "abla",
   "acep",
@@ -631,7 +631,6 @@ export const POPULAR_4: readonly string[] = Object.freeze([
   "irca",
   "irin",
   "iris",
-  "isim",
   "isli",
   "isot",
   "itaf",

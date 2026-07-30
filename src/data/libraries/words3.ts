@@ -1,4 +1,4 @@
-// Isolated 3-letter Turkish words library
+// Cleaned Turkish words library
 export const WORDS_3: readonly string[] = Object.freeze([
   "aba",
   "abd",

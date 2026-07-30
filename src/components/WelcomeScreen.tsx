@@ -442,19 +442,15 @@ export default function WelcomeScreen({
           }
           // Fallback timer: if it doesn't load in 2.5 seconds, try showing or notify
           setTimeout(() => {
-            setIsAdLoading(curr => {
-              if (curr) {
-                const hasExplicitRequest = adRequestActiveRef.current || 
-                  (typeof window !== 'undefined' && (window as any).userExplicitAdRequested === true) ||
-                  (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user_explicit_ad_requested') === 'true');
+            const hasExplicitRequest = adRequestActiveRef.current || 
+              (typeof window !== 'undefined' && (window as any).userExplicitAdRequested === true) ||
+              (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user_explicit_ad_requested') === 'true');
 
-                if (hasExplicitRequest && (window as any).AndroidBridge && (window as any).AndroidBridge.showRewardedAd) {
-                  clearAdRequestFlags(); // Reset flag before showing
-                  (window as any).AndroidBridge.showRewardedAd();
-                }
-              }
-              return curr;
-            });
+            if (hasExplicitRequest && (window as any).AndroidBridge && (window as any).AndroidBridge.showRewardedAd) {
+              clearAdRequestFlags(); // Reset flag before showing
+              setIsAdLoading(false);
+              (window as any).AndroidBridge.showRewardedAd();
+            }
           }, 2500);
         }
       } catch (e) {
@@ -467,17 +463,20 @@ export default function WelcomeScreen({
       setIsWatchingAd(true);
       setAdCountdown(5);
 
+      let currentCount = 5;
       const interval = setInterval(() => {
-        setAdCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setIsWatchingAd(false);
-            onWatchRewardedAdReward?.();
-            setShowAdSuccess(true);
-            return 0;
+        currentCount -= 1;
+        if (currentCount <= 0) {
+          clearInterval(interval);
+          setAdCountdown(0);
+          setIsWatchingAd(false);
+          setShowAdSuccess(true);
+          if (onRewardRef.current) {
+            onRewardRef.current();
           }
-          return prev - 1;
-        });
+        } else {
+          setAdCountdown(currentCount);
+        }
       }, 1000);
     }
   };
@@ -1452,7 +1451,7 @@ export default function WelcomeScreen({
               <span>{isAdLoading ? "⏳" : "📺"}</span>
               <div className="text-left">
                 <span className="block font-black text-[10px] leading-tight text-amber-900/80">
-                  {isAdLoading ? "REKLAM HAZIRLANIYOR..." : isWatchingAd ? "REKLAM OYNATILIYOR..." : "REKLAM İZLE"}
+                  {isAdLoading ? "REKLAM HAZIRLANIYOR..." : isWatchingAd ? "REKLAM OYNATILIYOR..." : "İZLE KAZAN"}
                 </span>
                 {isAdLoading && (
                   <span className="block text-[8px] font-mono text-gray-500 leading-none mt-0.5">

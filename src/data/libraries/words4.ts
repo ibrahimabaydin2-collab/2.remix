@@ -1,4 +1,4 @@
-// Isolated 4-letter Turkish words library
+// Cleaned Turkish words library
 export const WORDS_4: readonly string[] = Object.freeze([
   "abat",
   "abes",
@@ -915,7 +915,6 @@ export const WORDS_4: readonly string[] = Object.freeze([
   "iris",
   "irsî",
   "isal",
-  "isim",
   "isli",
   "isot",
   "itaf",

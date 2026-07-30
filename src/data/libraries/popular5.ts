@@ -1,4 +1,4 @@
-// Isolated 5-letter popular Turkish words library
+// Cleaned Turkish words library
 export const POPULAR_5: readonly string[] = Object.freeze([
   "abacı",
   "abalı",

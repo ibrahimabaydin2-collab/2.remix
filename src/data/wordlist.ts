@@ -1,6 +1,13 @@
 import { turkishUpper, turkishLower } from '../utils/turkish';
 import { populerKelimeler } from './populer_kelimeler';
 
+import { POPULAR_3 } from './libraries/popular3';
+import { POPULAR_4 } from './libraries/popular4';
+import { POPULAR_5 } from './libraries/popular5';
+import { POPULAR_6 } from './libraries/popular6';
+import { POPULAR_7 } from './libraries/popular7';
+import { POPULAR_8 } from './libraries/popular8';
+
 import { WORDS_3 } from './libraries/words3';
 import { WORDS_4 } from './libraries/words4';
 import { WORDS_5 } from './libraries/words5';
@@ -11,12 +18,12 @@ import { WORDS_8 } from './libraries/words8';
 import { EASY_WORDS_LEVEL_1 } from './libraries/easy1';
 
 export const COMMON_TURKISH_WORDS: { [key: number]: string[] } = {
-  3: [...WORDS_3],
-  4: [...WORDS_4],
-  5: [...WORDS_5],
-  6: [...WORDS_6],
-  7: [...WORDS_7],
-  8: [...WORDS_8],
+  3: [...POPULAR_3],
+  4: [...POPULAR_4],
+  5: [...POPULAR_5],
+  6: [...POPULAR_6],
+  7: [...POPULAR_7],
+  8: [...POPULAR_8],
 };
 
 export const CLEANED_TURKISH_WORDS: { [key: number]: string[] } = {

@@ -67,19 +67,6 @@ export default function FriendsModal({
   // Actions tracking state
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
-  const [copiedId, setCopiedId] = useState<boolean>(false);
-
-  // Helper to copy user ID
-  const handleCopyId = () => {
-    if (!profile?.id) return;
-    navigator.clipboard.writeText(profile.id).then(() => {
-      setCopiedId(true);
-      if (showToast) showToast('Oyuncu ID kopyalandı!', 'success');
-      setTimeout(() => setCopiedId(false), 2000);
-    }).catch(() => {
-      if (showToast) showToast(`ID: ${profile.id}`, 'info');
-    });
-  };
 
   // Helper to check real-time online status
   const isFriendOnline = (friend: { id: string; isOnline?: boolean; lastSeen?: number | string }) => {
@@ -140,7 +127,7 @@ export default function FriendsModal({
     refreshFriends(false);
   }, [profile?.id]);
 
-  // Execute search by ID or Username
+  // Execute search by Username
   const handleSearch = async () => {
     const term = searchTerm.trim();
     if (!term) return;
@@ -152,19 +139,7 @@ export default function FriendsModal({
     try {
       const resultsMap = new Map<string, UserProfile>();
 
-      // 1. Direct search by exact User ID / UID
-      if (term.length >= 3) {
-        try {
-          const directUser = await fetchUserProfile(term);
-          if (directUser && directUser.id && directUser.id !== profile.id) {
-            resultsMap.set(directUser.id, directUser);
-          }
-        } catch (e) {
-          // Ignore ID lookup errors
-        }
-      }
-
-      // 2. Search by username / display name prefix
+      // Search by username / display name
       const nameResults = await searchUserByName(term);
       nameResults.forEach(u => {
         if (u.id && u.id !== profile.id) {
@@ -279,25 +254,6 @@ export default function FriendsModal({
           </button>
         </div>
 
-        {/* User ID Quick Copy Card */}
-        <div className="bg-slate-900/80 border border-amber-500/30 rounded-2xl p-3 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <Shield size={16} className="text-amber-400 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Senin Oyuncu ID'n</p>
-              <p className="text-xs font-mono font-bold text-amber-300 truncate">{profile.id}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleCopyId}
-            className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer"
-          >
-            {copiedId ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-            <span>{copiedId ? 'Kopyalandı' : 'ID Kopyala'}</span>
-          </button>
-        </div>
-
         {/* Tab Selection Navigation */}
         <div className="flex bg-slate-900 p-1 rounded-2xl border border-slate-800 shrink-0">
           <button
@@ -360,7 +316,7 @@ export default function FriendsModal({
                 <div className="text-center py-10 px-4 bg-slate-900/50 rounded-2xl border border-slate-800 space-y-2">
                   <p className="text-xs font-extrabold text-amber-300 uppercase tracking-wider">Henüz Ekli Arkadaşın Yok 🏜️</p>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Arkadaş Ekle sekmesinden Oyuncu ID&apos;si veya Kullanıcı Adı yazarak arkadaşlarını ekleyebilir, duellolara davet edebilirsin!
+                    Arkadaş Ekle sekmesinden Kullanıcı Adı yazarak arkadaşlarınızı ekleyebilir, düellolara davet edebilirsiniz!
                   </p>
                   <button
                     type="button"
@@ -403,7 +359,6 @@ export default function FriendsModal({
                           {/* Info */}
                           <div className="min-w-0">
                             <span className="text-xs font-black text-white block truncate">{friend.name || 'Oyuncu'}</span>
-                            <span className="text-[10px] font-mono text-slate-400 block truncate">ID: {friend.id}</span>
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className={`text-[9.5px] font-bold font-mono px-1.5 py-0.2 rounded ${
                                 online 
@@ -460,19 +415,19 @@ export default function FriendsModal({
             </div>
           )}
 
-          {/* TAB 2: ADD FRIEND (SEARCH BY ID / USERNAME) */}
+          {/* TAB 2: ADD FRIEND (SEARCH BY USERNAME) */}
           {activeTab === 'add' && (
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                  Arkadaş Arama (ID veya Kullanıcı Adı)
+                  Arkadaş Arama (Kullanıcı Adı)
                 </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Oyuncu ID'si veya Kullanıcı Adı..."
+                      placeholder="Kullanıcı adı yazın..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       onKeyDown={(e) => {
@@ -503,7 +458,7 @@ export default function FriendsModal({
                   <AlertCircle size={20} className="text-amber-400 mx-auto mb-1.5" />
                   <p className="text-xs font-bold text-amber-300 uppercase">Oyuncu Bulunamadı 🔍</p>
                   <p className="text-[10.5px] text-slate-400 mt-1">
-                    Girdiğiniz ID veya kullanıcı adıyla eşleşen bir oyuncu bulunamadı. Lütfen harfleri tam girdiğinizden emin olun.
+                    Girdiğiniz kullanıcı adıyla eşleşen bir oyuncu bulunamadı. Lütfen kullanıcı adını doğru girdiğinizden emin olun.
                   </p>
                 </div>
               ) : (
@@ -531,7 +486,6 @@ export default function FriendsModal({
                           </div>
                           <div className="min-w-0">
                             <span className="text-xs font-black text-white block truncate">{user.name || 'Oyuncu'}</span>
-                            <span className="text-[9.5px] font-mono text-amber-300/80 block truncate">ID: {user.id}</span>
                           </div>
                         </div>
 

@@ -33,6 +33,8 @@ import { getApiUrl, getWsUrl, validateWordClientSide } from './utils/api';
 import { calculateDynamicScore, verifyScoringAccuracy, getLevelForScore } from './utils/scoring';
 import { getCachedWord, setCachedWord } from './utils/wordCache';
 import { scheduleDailyNotifications } from './utils/notifications';
+import { ADMOB_CONFIG, syncAdMobWithNativeBridge, triggerRewardedAdWatch } from './utils/admob';
+import AdMobBanner from './components/AdMobBanner';
 
 const INITIAL_STATS = {
   gamesPlayed: 0,
@@ -670,8 +672,32 @@ export default function App() {
     return typeof window !== 'undefined' && window.location.pathname === '/connect';
   });
 
-  // Capacitor Deep Link Listener (Supports both cold-start and warm-start)
+  // Capacitor Deep Link Listener & One-Time Fresh Database Reset
   useEffect(() => {
+    // Perform a one-time total wipe of local storage to ensure a clean slate
+    try {
+      const resetFlag = 'kelimesavasi_full_reset_2026_07_30';
+      if (safeLocalStorage.getItem(resetFlag) !== 'true') {
+        const allKeys = [
+          'kelimesavasi_profile',
+          'kelimesavasi_gold',
+          'kelimesavasi_stats',
+          'kelimesavasi_friends',
+          'lingo_profile',
+          'test_user',
+          'dummy_friends',
+          'guest_id_legacy',
+          'mock_users_cache',
+          'test_account'
+        ];
+        allKeys.forEach(k => safeLocalStorage.removeItem(k));
+        safeLocalStorage.setItem(resetFlag, 'true');
+        console.log('One-time client local storage purge complete.');
+      }
+    } catch (e) {
+      console.warn('LocalStorage legacy test cleanup warning:', e);
+    }
+
     let isSubscribed = true;
     
     const handleDeepLinkUrl = (urlStr: string) => {
@@ -1071,83 +1097,74 @@ export default function App() {
 
     const targetLower = targetWord.toLowerCase();
 
-    // Pre-create lowercase sets of clean and common words for O(1) lightning-fast lookups
-    const cleanedPool = CLEANED_TURKISH_WORDS[wordLength] || [];
+    // Candidate pool: Primary focus on popular common words
     const commonPool = COMMON_TURKISH_WORDS[wordLength] || [];
-    const cleanedSet = new Set(cleanedPool.map(x => turkishLower(x).trim()));
-    const commonSet = new Set(commonPool.map(x => turkishLower(x).trim()));
+    const cleanedPool = CLEANED_TURKISH_WORDS[wordLength] || [];
 
-    // Helper to verify a candidate word is linguistically valid and strictly exists in COMMON_TURKISH_WORDS and CLEANED_TURKISH_WORDS pools
-    const isLinguisticallyValid = (w: string): boolean => {
-      const lower = turkishLower(w).trim();
-      return cleanedSet.has(lower) && commonSet.has(lower);
+    // Prioritize popular everyday words pool
+    const primaryPool = commonPool.length > 0 ? commonPool : cleanedPool;
+
+    // Helper to check constraint matching for any word candidate
+    const matchesConstraints = (w: string, strict: boolean) => {
+      const word = w.toLowerCase().trim();
+      if (word.length !== wordLength) return false;
+      if (word === targetLower) return false; // never directly spoil the answer
+
+      // Greens check
+      for (let i = 0; i < wordLength; i++) {
+        if (greenLetters[i] !== undefined && word[i] !== greenLetters[i]) {
+          return false;
+        }
+      }
+
+      if (strict) {
+        // Oranges presence check
+        for (const char of orangeLetters) {
+          if (!word.includes(char)) return false;
+        }
+
+        // Orange position exclusions check
+        for (let i = 0; i < wordLength; i++) {
+          if (orangeExclusions[i] && orangeExclusions[i].has(word[i])) {
+            return false;
+          }
+        }
+
+        // Greys exclusion check
+        for (const char of greyLetters) {
+          if (word.includes(char)) return false;
+        }
+      }
+
+      return true;
     };
 
-    // 2. Filter words
-    const matchingWords = wordList.filter(w => {
-      const word = w.toLowerCase();
-      if (word.length !== wordLength) return false;
-      if (word === targetLower) return false; // don't reveal the exact answer directly!
-
-      // Check greens
-      for (let i = 0; i < wordLength; i++) {
-        if (greenLetters[i] !== undefined && word[i] !== greenLetters[i]) {
-          return false;
-        }
-      }
-
-      // Check oranges presence
-      for (const char of orangeLetters) {
-        if (!word.includes(char)) {
-          return false;
-        }
-      }
-
-      // Check orange positions exclusion
-      for (let i = 0; i < wordLength; i++) {
-        if (orangeExclusions[i] && orangeExclusions[i].has(word[i])) {
-          return false;
-        }
-      }
-
-      // Check greys exclusion
-      for (const char of greyLetters) {
-        if (word.includes(char)) {
-          return false;
-        }
-      }
-
-      // Ensure the word is linguistically valid
-      return isLinguisticallyValid(word);
-    });
-
-    if (matchingWords.length > 0) {
-      const idx = Math.floor(Math.random() * matchingWords.length);
-      return turkishUpper(matchingWords[idx]);
+    // Level 1: Popular pool matching all strict constraints
+    const primaryStrictMatches = primaryPool.filter(w => matchesConstraints(w, true));
+    if (primaryStrictMatches.length > 0) {
+      const selected = primaryStrictMatches[Math.floor(Math.random() * primaryStrictMatches.length)];
+      return turkishUpper(selected);
     }
 
-    // Fallback: if no perfect match, find words that match just the green letters and are linguistically valid
-    const simpleMatching = wordList.filter(w => {
-      const word = w.toLowerCase();
-      if (word.length !== wordLength) return false;
-      if (word === targetLower) return false;
-      for (let i = 0; i < wordLength; i++) {
-        if (greenLetters[i] !== undefined && word[i] !== greenLetters[i]) {
-          return false;
-        }
-      }
-      return isLinguisticallyValid(word);
-    });
-
-    if (simpleMatching.length > 0) {
-      const idx = Math.floor(Math.random() * simpleMatching.length);
-      return turkishUpper(simpleMatching[idx]);
+    // Level 2: Full dictionary pool matching all strict constraints
+    const fullStrictMatches = cleanedPool.filter(w => matchesConstraints(w, true));
+    if (fullStrictMatches.length > 0) {
+      const selected = fullStrictMatches[Math.floor(Math.random() * fullStrictMatches.length)];
+      return turkishUpper(selected);
     }
 
-    // Secondary fallback: just pick a random word of same length that isn't the target word and is linguistically valid
-    const allowed = wordList.filter(w => w.length === wordLength && w.toLowerCase() !== targetLower && isLinguisticallyValid(w));
-    if (allowed.length > 0) {
-      return turkishUpper(allowed[Math.floor(Math.random() * allowed.length)]);
+    // Level 3: Popular pool matching green letters
+    const primaryGreenMatches = primaryPool.filter(w => matchesConstraints(w, false));
+    if (primaryGreenMatches.length > 0) {
+      const selected = primaryGreenMatches[Math.floor(Math.random() * primaryGreenMatches.length)];
+      return turkishUpper(selected);
+    }
+
+    // Level 4: Full dictionary pool matching green letters
+    const fullGreenMatches = cleanedPool.filter(w => matchesConstraints(w, false));
+    if (fullGreenMatches.length > 0) {
+      const selected = fullGreenMatches[Math.floor(Math.random() * fullGreenMatches.length)];
+      return turkishUpper(selected);
     }
 
     return null;
@@ -1272,6 +1289,10 @@ export default function App() {
       console.warn("Firestore ad reward failed:", err);
     });
   };
+
+  useEffect(() => {
+    syncAdMobWithNativeBridge();
+  }, []);
 
   const [dictionaryMode, setDictionaryMode] = useState<'tdk_online' | 'no_validation'>(() => {
     const saved = safeLocalStorage.getItem('kelimesavasi_dict_mode');
@@ -5956,9 +5977,8 @@ export default function App() {
 
   return (
     <div className={`h-screen max-h-screen overflow-hidden flex flex-col transition-all duration-300 ${getBgThemeClass()} ${getFontFamilyClass()} ${isAndroidApp ? 'android-hybrid' : ''}`}>
-      {/* Safe Space for Future Top Banner Ad */}
-      <div className="h-[50px] w-full shrink-0 flex items-center justify-center border-b border-[#3E485A]/15 bg-black/35 text-[#FAF6E9]/40 font-mono text-[9px] tracking-widest select-none uppercase" id="top-ad-placeholder">
-      </div>
+      {/* Top Banner Ad Component */}
+      <AdMobBanner type="top" />
 
       {/* Main Container */}
       <main className="flex-1 flex flex-col items-stretch justify-stretch w-full max-w-full relative overflow-hidden">
@@ -6321,18 +6341,8 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <GoldWallet gold={profile?.gold !== undefined ? profile.gold : 20} />
                       <button
-                        onClick={async () => {
-                          if (typeof window !== 'undefined' && (window as any).AndroidBridge && (window as any).AndroidBridge.showRewardedAd) {
-                            try {
-                              suspendAudioContext();
-                              document.body.classList.add('ad-active');
-                              (window as any).AndroidBridge.showRewardedAd();
-                            } catch (e) {
-                              await handleWatchRewardedAdReward();
-                            }
-                          } else {
-                            await handleWatchRewardedAdReward();
-                          }
+                        onClick={() => {
+                          triggerRewardedAdWatch(handleWatchRewardedAdReward);
                         }}
                         className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 hover:from-amber-400/30 hover:to-yellow-500/30 active:scale-95 border border-amber-400/40 text-amber-300 px-2.5 py-1 rounded-full transition cursor-pointer shadow-sm text-xs font-bold"
                         title="Reklam İzleyerek +10 Altın Kazan"
@@ -7382,9 +7392,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Safe Space for Future Bottom Banner Ad */}
-      <div className="h-[50px] w-full shrink-0 flex items-center justify-center border-t border-[#3E485A]/15 bg-black/35 text-[#FAF6E9]/40 font-mono text-[9px] tracking-widest select-none uppercase mt-auto" id="bottom-ad-placeholder">
-      </div>
+      {/* Bottom Banner Ad Component */}
+      <AdMobBanner type="bottom" />
     </div>
   );
 }

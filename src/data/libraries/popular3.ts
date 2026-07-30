@@ -1,4 +1,4 @@
-// Isolated 3-letter popular Turkish words library
+// Cleaned Turkish words library
 export const POPULAR_3: readonly string[] = Object.freeze([
   "acı",
   "ada",
