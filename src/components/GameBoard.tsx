@@ -1,5 +1,5 @@
 // Complete rebuild stamp: 2026-07-28 v1.0.3
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { ArrowDownFromLine } from 'lucide-react';
 
 interface GameBoardProps {
@@ -50,10 +50,13 @@ const SubmittedRow = memo(function SubmittedRow({
   isGameOver?: boolean;
   onTransferRowGreenLetters?: (rowIndex: number) => void;
 }) {
-  const sizeClass = getCellSizeClass(wordLength);
+  const sizeClass = useMemo(() => getCellSizeClass(wordLength), [wordLength]);
   const baseCell = `${sizeClass} flex items-center justify-center font-bold uppercase transition-all duration-200 select-none`;
-  const wordChars = row.word.split('');
-  const hasGreenInRow = row.feedback && Array.isArray(row.feedback) && row.feedback.includes('green');
+  const wordChars = useMemo(() => row.word.split(''), [row.word]);
+  const hasGreenInRow = useMemo(
+    () => Boolean(row.feedback && Array.isArray(row.feedback) && row.feedback.includes('green')),
+    [row.feedback]
+  );
 
   const getSubmittedCellClass = (feedback?: 'green' | 'orange' | 'grey') => {
     let greenStyle = 'border-emerald-400 bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-lg shadow-emerald-500/20';
@@ -145,9 +148,9 @@ const ActiveRow = memo(function ActiveRow({
   revealedHints?: { [index: number]: string };
   isDuplicateAttempt?: boolean;
 }) {
-  const sizeClass = getCellSizeClass(wordLength);
+  const sizeClass = useMemo(() => getCellSizeClass(wordLength), [wordLength]);
   const baseCell = `${sizeClass} flex items-center justify-center font-bold uppercase transition-all duration-100 select-none`;
-  const padded = currentAttempt.padEnd(wordLength, ' ').split('');
+  const padded = useMemo(() => currentAttempt.padEnd(wordLength, ' ').split(''), [currentAttempt, wordLength]);
 
   return (
     <div className="relative flex items-center justify-center">
@@ -193,9 +196,9 @@ const EmptyRow = memo(function EmptyRow({
   wordLength: number;
   rowIndex: number;
 }) {
-  const sizeClass = getCellSizeClass(wordLength);
+  const sizeClass = useMemo(() => getCellSizeClass(wordLength), [wordLength]);
   const cellClass = `${sizeClass} flex items-center justify-center font-bold uppercase border-[#3E485A] bg-[#222B3A]/45 text-[#FAF6E9]/30 select-none`;
-  const emptyChars = Array(wordLength).fill(' ');
+  const emptyChars = useMemo(() => Array(wordLength).fill(' '), [wordLength]);
 
   return (
     <div className="relative flex items-center justify-center">
@@ -229,6 +232,11 @@ function GameBoard({
   // Determine how many empty rows to render after active row
   const remainingCount = Math.max(0, maxAttempts - submittedCount - (isGameOver || isCompleted ? 0 : 1));
 
+  const emptyRowIndices = useMemo(() => {
+    const start = submittedCount + (isGameOver || isCompleted ? 0 : 1);
+    return Array.from({ length: remainingCount }, (_, idx) => start + idx);
+  }, [remainingCount, submittedCount, isGameOver, isCompleted]);
+
   return (
     <div className="flex flex-col gap-[clamp(0.08rem,0.4vh,0.22rem)] items-center justify-center overflow-visible w-full px-8 shrink-0">
       {/* 1. Submitted Rows */}
@@ -257,16 +265,13 @@ function GameBoard({
       )}
 
       {/* 3. Future Empty Rows */}
-      {Array.from({ length: remainingCount }).map((_, idx) => {
-        const rowIndex = submittedCount + (isGameOver || isCompleted ? 0 : 1) + idx;
-        return (
-          <EmptyRow
-            key={`empty-row-${rowIndex}`}
-            wordLength={wordLength}
-            rowIndex={rowIndex}
-          />
-        );
-      })}
+      {emptyRowIndices.map((rowIndex) => (
+        <EmptyRow
+          key={`empty-row-${rowIndex}`}
+          wordLength={wordLength}
+          rowIndex={rowIndex}
+        />
+      ))}
     </div>
   );
 }

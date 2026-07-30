@@ -492,8 +492,16 @@ export default function WelcomeScreen({
   }, [showFriendsModal]);
 
   // Profile Inline Editor State
-  const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editName, setEditName] = useState<string>(profile?.name || '');
+  const isGenericName = (n?: string) => !n || n === 'Oyuncu' || n === 'Kelime Oyuncusu' || n === 'Google Oyuncusu' || n.startsWith('Savaşçı_');
+  
+  const [isEditing, setIsEditing] = useState<boolean>(() => {
+    if (!profile) return true;
+    return !profile.nameSet || isGenericName(profile.name);
+  });
+  const [editName, setEditName] = useState<string>(() => {
+    if (profile?.name && !isGenericName(profile.name)) return profile.name;
+    return '';
+  });
   const [selectedAvatar, setSelectedAvatar] = useState<string>(profile?.avatarUrl || '🧠');
   const [isTouched, setIsTouched] = useState<boolean>(false);
   const [dbUsernameError, setDbUsernameError] = useState<string | null>(null);
@@ -663,14 +671,16 @@ export default function WelcomeScreen({
 
   React.useEffect(() => {
     if (profile) {
-      if (profile.name) {
+      if (profile.name && !isGenericName(profile.name)) {
         setEditName(profile.name);
+      } else {
+        setIsEditing(true);
       }
       if (profile.avatarUrl) {
         setSelectedAvatar(profile.avatarUrl);
       }
     }
-  }, [profile?.name, profile?.avatarUrl]);
+  }, [profile?.name, profile?.avatarUrl, profile?.nameSet]);
 
   const AVATAR_PRESETS = ['⚔️', '🧠', '🐺', '🦁', '🧙‍♂️', '🦊', '👾', '🦄', '⚡', '👑', '🎯', '🚀', '🔥', '🐉', '🐼', '🛡️', '🏆', '🦉'];
 
@@ -1079,14 +1089,17 @@ export default function WelcomeScreen({
       {/* Sparkles / Title */}
       <div className="flex justify-between items-center pb-2 border-b border-white/10">
         <span className="text-sm font-bold font-mono text-amber-200 uppercase tracking-widest flex items-center gap-1.5">
-          <Sparkles size={14} className="animate-pulse" /> Profilini Düzenle
+          <Sparkles size={14} className="animate-pulse" />
+          {profile?.nameSet && !isGenericName(profile?.name) ? 'Profilini Düzenle' : 'Kullanıcı Adınızı Belirleyin'}
         </span>
-        <button 
-          onClick={() => setIsEditing(false)}
-          className="text-xs text-[#FAF6E9]/70 hover:text-white transition"
-        >
-          Kapat
-        </button>
+        {profile?.nameSet && !isGenericName(profile?.name) && (
+          <button 
+            onClick={() => setIsEditing(false)}
+            className="text-xs text-[#FAF6E9]/70 hover:text-white transition cursor-pointer"
+          >
+            Kapat
+          </button>
+        )}
       </div>
 
       {/* Avatar Selector Grid */}
@@ -1217,19 +1230,21 @@ export default function WelcomeScreen({
 
       {/* Save / Cancel buttons */}
       <div className="flex gap-2 mt-2">
-        <button
-          onClick={() => {
-            setIsEditing(false);
-            setIsTouched(false);
-          }}
-          className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-xs font-bold text-gray-300 hover:text-white hover:bg-white/5 transition"
-        >
-          Vazgeç
-        </button>
+        {profile?.nameSet && !isGenericName(profile?.name) && (
+          <button
+            onClick={() => {
+              setIsEditing(false);
+              setIsTouched(false);
+            }}
+            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-xs font-bold text-gray-300 hover:text-white hover:bg-white/5 transition cursor-pointer"
+          >
+            Vazgeç
+          </button>
+        )}
         <button
           onClick={handleSaveProfile}
           disabled={!editName.trim() || !!error || isCheckingName}
-          className="flex-1 py-3 px-4 rounded-xl bg-[#FAF6E9] hover:bg-[#F3EFE0] disabled:opacity-50 text-[#2E3748] text-xs font-black transition shadow-md flex items-center justify-center gap-1.5"
+          className="flex-1 py-3 px-4 rounded-xl bg-[#FAF6E9] hover:bg-[#F3EFE0] disabled:opacity-50 text-[#2E3748] text-xs font-black transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
         >
           {isCheckingName ? (
             <>
@@ -1237,7 +1252,7 @@ export default function WelcomeScreen({
               <span>Kontrol ediliyor...</span>
             </>
           ) : (
-            <span>Onayla</span>
+            <span>Kaydet ve Oyuna Başla</span>
           )}
         </button>
       </div>

@@ -1979,26 +1979,13 @@ export default function App() {
               return;
             }
 
-            const savedUsername = safeLocalStorage.getItem('saved_username');
-            const savedProfileStr = safeLocalStorage.getItem('kelimesavasi_profile');
-            const isRegisteredUser = safeLocalStorage.getItem('kelimesavasi_is_registered') === 'true';
-            if (!isRegisteredUser && (savedUsername || savedProfileStr)) {
-              console.log('Returning anonymous user session detected. Auto-signing in as guest to prevent AuthScreen flash...');
-              try {
-                await signInAsGuest();
-                console.log('Auto-sign in as guest succeeded inside Auth listener.');
-              } catch (guestErr) {
-                console.error('Auto guest login failed in Auth listener:', guestErr);
-                if (active && !resolved) {
-                  resolved = true;
-                  setAuthLoading(false);
-                  clearTimeout(timeoutId);
-                }
-              }
-            } else {
-              // Truly new visitor or signed out. Stop loading and show registration/login.
-              setProfile(null as any);
-              if (active) {
+            console.log('No active user session detected. Auto-signing in as guest to direct user to WelcomeScreen...');
+            try {
+              await signInAsGuest();
+              console.log('Auto guest initialization succeeded inside Auth listener.');
+            } catch (guestErr) {
+              console.error('Auto guest initialization failed in Auth listener:', guestErr);
+              if (active && !resolved) {
                 resolved = true;
                 setAuthLoading(false);
                 clearTimeout(timeoutId);

@@ -1,50 +1,215 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <!-- Dark slate gradient for background -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e293b" />
-    </linearGradient>
-    <!-- Shiny emerald gradient for the main tile -->
-    <linearGradient id="tileGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#10b981" />
-      <stop offset="100%" stop-color="#047857" />
-    </linearGradient>
-    <!-- Glass reflection effect -->
-    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15" />
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
-    </linearGradient>
-    <!-- High-end drop shadow -->
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000000" flood-opacity="0.5" />
+    <!-- Filters -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
+    <filter id="tileShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#051229" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1B52B0"/>
+      <stop offset="50%" stop-color="#0D3B89"/>
+      <stop offset="100%" stop-color="#062259"/>
+    </linearGradient>
+
+    <radialGradient id="bgHighlight" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#3A7BD5" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#062259" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Green Brain Gradients -->
+    <linearGradient id="greenBrainBase" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3CD070"/>
+      <stop offset="50%" stop-color="#27AE60"/>
+      <stop offset="100%" stop-color="#196F3D"/>
+    </linearGradient>
+    <linearGradient id="greenBrainHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#A9DFBF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#27AE60" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Blue Brain Gradients -->
+    <linearGradient id="blueBrainBase" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5DADE2"/>
+      <stop offset="50%" stop-color="#2980B9"/>
+      <stop offset="100%" stop-color="#1B4F72"/>
+    </linearGradient>
+    <linearGradient id="blueBrainHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#AED6F1" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#2980B9" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Lightning Gradients -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF5B8"/>
+      <stop offset="30%" stop-color="#FFD700"/>
+      <stop offset="70%" stop-color="#F39C12"/>
+      <stop offset="100%" stop-color="#B7950B"/>
+    </linearGradient>
+
+    <linearGradient id="goldTileGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF0"/>
+      <stop offset="15%" stop-color="#FFEAA7"/>
+      <stop offset="85%" stop-color="#F2C94C"/>
+      <stop offset="100%" stop-color="#D4AC0D"/>
+    </linearGradient>
+
+    <linearGradient id="goldTileBorder" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#B7950B"/>
+    </linearGradient>
   </defs>
 
-  <!-- Background Base -->
-  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <!-- App Canvas / Rounded Squircle Background -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bgGrad)"/>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bgHighlight)"/>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="none" stroke="#5DADE2" stroke-opacity="0.25" stroke-width="6"/>
 
-  <!-- Outer Ring Glow -->
-  <rect x="76" y="76" width="360" height="360" rx="80" fill="none" stroke="#34d399" stroke-width="4" stroke-opacity="0.3" />
+  <!-- ==================== CENTER LOGO: BRAIN & LIGHTNING ==================== -->
+  <g transform="translate(512, 512)" filter="url(#shadow)">
+    <!-- LEFT BRAIN (Green) -->
+    <g transform="translate(-15, 0)">
+      <!-- Base shape -->
+      <path d="M-40,-180 C-110,-190 -180,-140 -200,-80 C-220,-20 -210,40 -190,90 C-170,140 -110,180 -40,180 C-20,180 -10,140 -10,90 L-10,-140 C-10,-170 -25,-178 -40,-180 Z" fill="url(#greenBrainBase)" stroke="#1E8449" stroke-width="8"/>
+      <!-- Inner Brain Folds (Lobe Details) -->
+      <path d="M-130,-120 C-180,-80 -160,-20 -110,0 C-160,20 -150,100 -80,120" fill="none" stroke="#196F3D" stroke-width="14" stroke-linecap="round"/>
+      <path d="M-130,-120 C-180,-80 -160,-20 -110,0 C-160,20 -150,100 -80,120" fill="none" stroke="#52BE80" stroke-width="8" stroke-linecap="round"/>
+      <path d="M-80,-150 C-130,-110 -110,-40 -60,-20 C-110,10 -100,70 -40,80" fill="none" stroke="#196F3D" stroke-width="12" stroke-linecap="round"/>
+      <path d="M-80,-150 C-130,-110 -110,-40 -60,-20 C-110,10 -100,70 -40,80" fill="none" stroke="#A9DFBF" stroke-width="6" stroke-linecap="round"/>
+      <!-- Top Gloss Highlight -->
+      <path d="M-60,-165 C-120,-160 -170,-120 -185,-70 C-150,-100 -90,-120 -45,-120 Z" fill="url(#greenBrainHighlight)" opacity="0.6"/>
+    </g>
 
-  <!-- Main Emerald Tile -->
-  <rect x="96" y="96" width="320" height="320" rx="72" fill="url(#tileGrad)" filter="url(#shadow)" stroke="#34d399" stroke-width="8" />
+    <!-- RIGHT BRAIN (Blue) -->
+    <g transform="translate(15, 0)">
+      <!-- Base shape -->
+      <path d="M40,-180 C110,-190 180,-140 200,-80 C220,-20 210,40 190,90 C170,140 110,180 40,180 C20,180 10,140 10,90 L10,-140 C10,-170 25,-178 40,-180 Z" fill="url(#blueBrainBase)" stroke="#1B4F72" stroke-width="8"/>
+      <!-- Inner Brain Folds (Lobe Details) -->
+      <path d="M130,-120 C180,-80 160,-20 110,0 C160,20 150,100 80,120" fill="none" stroke="#154360" stroke-width="14" stroke-linecap="round"/>
+      <path d="M130,-120 C180,-80 160,-20 110,0 C160,20 150,100 80,120" fill="none" stroke="#5DADE2" stroke-width="8" stroke-linecap="round"/>
+      <path d="M80,-150 C130,-110 110,-40 60,-20 C110,10 100,70 40,80" fill="none" stroke="#154360" stroke-width="12" stroke-linecap="round"/>
+      <path d="M80,-150 C130,-110 110,-40 60,-20 C110,10 100,70 40,80" fill="none" stroke="#AED6F1" stroke-width="6" stroke-linecap="round"/>
+      <!-- Top Gloss Highlight -->
+      <path d="M60,-165 C120,-160 170,-120 185,-70 C150,-100 90,-120 45,-120 Z" fill="url(#blueBrainHighlight)" opacity="0.6"/>
+    </g>
 
-  <!-- Stylized Letter 'K' inside the tile -->
-  <text x="256" y="325" font-family="'Inter', system-ui, -apple-system, sans-serif" font-size="220" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-5" style="user-select: none;">K</text>
-
-  <!-- Mini Crossing Swords Accent in the Center-Top to emphasize Battle -->
-  <g transform="translate(256, 155) scale(1.3)" filter="drop-shadow(0px 4px 6px rgba(0,0,0,0.3))">
-    <!-- Sword 1 -->
-    <path d="M-20,20 L20,-20" stroke="#ffffff" stroke-width="5" stroke-linecap="round" />
-    <path d="M12,-20 L20,-20 L20,-12" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-    <!-- Sword 2 -->
-    <path d="M20,20 L-20,-20" stroke="#ffffff" stroke-width="5" stroke-linecap="round" />
-    <path d="M-12,-20 L-20,-20 L-20,-12" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-    <!-- Guard/Hilt -->
-    <circle cx="0" cy="0" r="4" fill="#f59e0b" />
+    <!-- LIGHTNING BOLT IN CENTER -->
+    <g filter="url(#glow)">
+      <!-- Shadow offset -->
+      <path d="M15,-210 L-75,0 L5,0 L-35,190 L85,-20 L0,-20 Z" fill="#7D6608" transform="translate(0, 10)"/>
+      <!-- Main Gold Lightning Shape -->
+      <path d="M15,-210 L-75,0 L5,0 L-35,190 L85,-20 L0,-20 Z" fill="url(#goldGrad)" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+      <!-- Bevel Highlight -->
+      <path d="M15,-200 L-65,-5 L-5,-5 L-35,170 L70,-25 L-10,-25 L10,-200 Z" fill="none" stroke="#FFF9C4" stroke-width="4" opacity="0.8"/>
+      
+      <!-- CUTE FACE ON LIGHTNING BOLT -->
+      <g transform="translate(-2, -15)">
+        <!-- Left Eye (Happy Curved) -->
+        <path d="M-22,-12 Q-14,-22 -6,-12" fill="none" stroke="#3E2723" stroke-width="5" stroke-linecap="round"/>
+        <!-- Right Eye (Happy Curved) -->
+        <path d="M10,-12 Q18,-22 26,-12" fill="none" stroke="#3E2723" stroke-width="5" stroke-linecap="round"/>
+        <!-- Cute Smile -->
+        <path d="M-8,6 Q2,16 12,6" fill="none" stroke="#3E2723" stroke-width="5" stroke-linecap="round"/>
+        <!-- Left Pink Blush -->
+        <ellipse cx="-26" cy="-2" rx="8" ry="5" fill="#F1948A" opacity="0.8"/>
+        <!-- Right Pink Blush -->
+        <ellipse cx="30" cy="-2" rx="8" ry="5" fill="#F1948A" opacity="0.8"/>
+      </g>
+    </g>
   </g>
 
-  <!-- Glass reflection diagonal highlight -->
-  <path d="M96,96 L416,96 L416,190 L96,290 Z" fill="url(#glassGrad)" style="pointer-events: none;" />
+  <!-- ==================== ARCHED LETTER TILES: K E L İ M E ==================== -->
+  <!-- Center top arch: (512, 195) -->
+  <!-- Tile 1: K -->
+  <g transform="translate(205, 305) rotate(-32)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">K</text>
+  </g>
+
+  <!-- Tile 2: E -->
+  <g transform="translate(315, 230) rotate(-19)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">E</text>
+  </g>
+
+  <!-- Tile 3: L -->
+  <g transform="translate(438, 185) rotate(-6)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">L</text>
+  </g>
+
+  <!-- Tile 4: İ -->
+  <g transform="translate(564, 182) rotate(6)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">İ</text>
+  </g>
+
+  <!-- Tile 5: M -->
+  <g transform="translate(688, 218) rotate(19)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">M</text>
+  </g>
+
+  <!-- Tile 6: E -->
+  <g transform="translate(802, 288) rotate(32)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">E</text>
+  </g>
+
+
+  <!-- ==================== ARCHED LETTER TILES: S A V A Ş I ==================== -->
+  <!-- Tile 1: S -->
+  <g transform="translate(200, 710) rotate(30)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">S</text>
+  </g>
+
+  <!-- Tile 2: A -->
+  <g transform="translate(310, 782) rotate(18)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">A</text>
+  </g>
+
+  <!-- Tile 3: V -->
+  <g transform="translate(432, 828) rotate(6)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">V</text>
+  </g>
+
+  <!-- Tile 4: A -->
+  <g transform="translate(558, 832) rotate(-6)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">A</text>
+  </g>
+
+  <!-- Tile 5: Ş -->
+  <g transform="translate(682, 795) rotate(-18)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">Ş</text>
+  </g>
+
+  <!-- Tile 6: I -->
+  <g transform="translate(798, 725) rotate(-30)" filter="url(#tileShadow)">
+    <rect x="-48" y="-48" width="96" height="96" rx="20" fill="url(#goldTileGrad)" stroke="url(#goldTileBorder)" stroke-width="4"/>
+    <rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="16" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-size="52" fill="#3E2723" text-anchor="middle">I</text>
+  </g>
 </svg>
