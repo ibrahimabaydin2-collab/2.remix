@@ -44,8 +44,10 @@ const ABSOLUTE_FALLBACK_WORDS: { [key: number]: string } = {
   8: 'ÖĞRETMEN'
 };
 
-export function getRandomWord(length: number, isLevel1?: boolean): string {
-  const targetLength = Number(length) || 5;
+export function getRandomWord(length?: number, isLevel1?: boolean): string {
+  const targetLength = (length && Number(length) >= 3 && Number(length) <= 8)
+    ? Number(length)
+    : (Math.floor(Math.random() * 6) + 3);
 
   if (isLevel1) {
     const easyList = EASY_WORDS_LEVEL_1[targetLength];

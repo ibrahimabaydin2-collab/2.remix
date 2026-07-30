@@ -205,7 +205,7 @@ app.get('/api/health', (req, res) => {
 // Endpoint to generate a target word
 app.post('/api/random-word', (req, res) => {
   const { length } = req.body;
-  const wordLength = Number(length) || 5;
+  const wordLength = (length && Number(length) >= 3 && Number(length) <= 8) ? Number(length) : (Math.floor(Math.random() * 6) + 3);
   const word = getRandomWord(wordLength);
   res.json({ word });
 });
@@ -608,7 +608,7 @@ app.post('/api/send-challenge-notification', async (req, res) => {
     void sendFcmChallengeNotification({
       challengedId,
       challengerName: challengerName || 'Bir arkadaşın',
-      wordLength: Number(wordLength) || 5,
+      wordLength: (wordLength && Number(wordLength) >= 3 && Number(wordLength) <= 8) ? Number(wordLength) : (Math.floor(Math.random() * 6) + 3),
       challengeId,
       isOffline: Boolean(isOffline)
     }).catch(() => {});
@@ -1867,7 +1867,7 @@ async function startServer() {
           const challengerName = data.challengerName || existingClient?.name || 'Bir arkadaşın';
           const challengerAvatar = data.challengerAvatar || existingClient?.avatarUrl || '';
           const challengedId = data.challengedId;
-          const wordLength = Number(data.wordLength) || 5;
+          const wordLength = (data.wordLength && Number(data.wordLength) >= 3 && Number(data.wordLength) <= 8) ? Number(data.wordLength) : (Math.floor(Math.random() * 6) + 3);
           const challengeId = data.challengeId || ('chal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
           const challengeObj = {
@@ -1910,7 +1910,7 @@ async function startServer() {
           const challenge = activeServerChallenges.get(challengeId) || data.challenge;
 
           if (accept) {
-            const challengeWordLength = Number(challenge?.wordLength) || 5;
+            const challengeWordLength = (challenge?.wordLength && Number(challenge?.wordLength) >= 3 && Number(challenge?.wordLength) <= 8) ? Number(challenge.wordLength) : (Math.floor(Math.random() * 6) + 3);
             const dataWordLength = data.wordLength ? Number(data.wordLength) : challengeWordLength;
 
             // Strict server-side validation check: both players must have the same word length

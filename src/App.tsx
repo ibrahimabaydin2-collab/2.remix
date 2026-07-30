@@ -4978,7 +4978,7 @@ export default function App() {
   };
 
   // Handle Multiplayer Challenge Actions
-  const handleChallengePlayer = async (player: any, length: number) => {
+  const handleChallengePlayer = async (player: any, length?: number) => {
     if (!profile?.id) {
       showToast('Meydan okumak için giriş yapmış olmalısınız.', 'error');
       return;
@@ -5002,6 +5002,7 @@ export default function App() {
     const challengeId = 'chal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const now = Date.now();
     const expiresAt = now + 10000;
+    const challengeWordLen = (length && length >= 3 && length <= 8) ? length : (Math.floor(Math.random() * 6) + 3);
 
     const challengeData = {
       id: challengeId,
@@ -5011,7 +5012,7 @@ export default function App() {
       challengerAvatar: profile.avatarUrl || '🧠',
       challengedId: player.id,
       challengedName: player.name || 'Oyuncu',
-      wordLength: length,
+      wordLength: challengeWordLen,
       status: 'pending',
       createdAt: new Date().toISOString(),
       expiresAt
@@ -5113,7 +5114,7 @@ export default function App() {
       completelyResetMatchState();
 
       const targetData = challengeObj || activeChallenges.find(c => c.id === challengeId);
-      const targetLength = Number(targetData?.wordLength || duelWordLength || 5);
+      const targetLength = Number(targetData?.wordLength || (Math.floor(Math.random() * 6) + 3));
 
       const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
       const correctWord = turkishUpper(getRandomWord(targetLength, true));
@@ -6186,7 +6187,7 @@ export default function App() {
                     <div className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500/20 to-amber-600/10 border border-amber-500/35 flex items-center gap-1.5 shadow-inner">
                       <Swords size={13} className="text-amber-400 shrink-0 animate-pulse" />
                       <span className="text-[10px] sm:text-xs font-black font-mono tracking-wider text-amber-300 uppercase">
-                        {targetWord?.length || duelWordLength || 5} HARFLİ DÜELLO
+                        {targetWord?.length || activeMatch?.wordLength || duelWordLength || 5} HARFLİ DÜELLO
                       </span>
                     </div>
                   </div>
@@ -6298,12 +6299,12 @@ export default function App() {
                 <span className="text-[10px] font-black text-amber-400 font-mono tracking-widest uppercase mt-3">CANLI 1v1 DÜELLO</span>
                 <h3 className="text-lg font-black text-[#FAF6E9] tracking-wide uppercase mt-0.5">RAKİP ARANIYOR...</h3>
                 <p className="text-xs text-gray-300 mt-1 leading-normal">
-                  {duelWordLength} harfli canlı düello için rakip bekleniyor. Odaya girildiği an yarış başlayacak!
+                  Canlı düello için rakip bekleniyor. Odaya girildiği an kelime uzunluğu (3-8 harf) rastgele belirlenerek yarış başlayacak! ⚡
                 </p>
               </div>
 
               <button
-                onClick={() => handleStartMatchmaking(duelWordLength)}
+                onClick={() => handleStartMatchmaking()}
                 className="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer active:scale-95"
               >
                 Aramayı İptal Et
@@ -6772,14 +6773,13 @@ export default function App() {
 
               {/* Buttons Block */}
               <div className="space-y-2 mt-auto shrink-0 pt-1">
-                {/* Instant Matchmaking (Play Again) Button with same word length */}
+                {/* Instant Matchmaking (Play Again) Button with fresh random word length */}
                 <button
                   onClick={async () => {
                     playClickSound(settings.soundEnabled);
-                    const currentWordLen = activeMatch?.wordLength || duelWordLength || wordLength || 5;
                     await handleLeaveMatchToMenu();
                     setTimeout(() => {
-                      handleStartMatchmaking(currentWordLen);
+                      handleStartMatchmaking();
                     }, 100);
                   }}
                   className="w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-950 shadow-emerald-500/20 cursor-pointer border border-emerald-400/50"

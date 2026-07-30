@@ -382,7 +382,7 @@ export default function FriendsModal({
                             <button
                               type="button"
                               disabled={isChallengePending}
-                              onClick={() => onChallengePlayer(friend, duelWordLength || wordLength || 5)}
+                              onClick={() => onChallengePlayer(friend, Math.floor(Math.random() * 6) + 3)}
                               className={`px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase transition flex items-center gap-1 border ${
                                 isChallengePending
                                   ? 'bg-slate-800 text-slate-500 border-slate-700 opacity-60 cursor-not-allowed'
