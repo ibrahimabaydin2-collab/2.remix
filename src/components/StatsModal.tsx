@@ -74,6 +74,29 @@ const renderBadgeIcon = (iconName: string, isUnlocked: boolean) => {
   }
 };
 
+const CustomWordLengthTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-[#101520] border border-amber-500/40 p-2.5 rounded-xl shadow-2xl text-white text-xs space-y-1">
+        <p className="font-extrabold text-amber-300 flex items-center gap-1.5 border-b border-white/10 pb-1">
+          <Target size={13} className="text-amber-400" />
+          {data.rawLength} Harfli Kelimeler
+        </p>
+        <div className="flex justify-between items-center gap-4 text-xs font-mono pt-1">
+          <span className="text-gray-300">Kazanılan Oyun:</span>
+          <span className="font-black text-amber-400">{data['Galibiyet']}</span>
+        </div>
+        <div className="flex justify-between items-center gap-4 text-[10.5px] font-mono text-gray-400">
+          <span>Galibiyet Payı:</span>
+          <span className="font-bold text-amber-200 font-mono">%{data.percentage}</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function StatsModal({
   profile,
   onClose,
@@ -122,29 +145,6 @@ export default function StatsModal({
       fill: wordLengthColors[index]
     };
   });
-
-  const CustomWordLengthTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-[#101520] border border-amber-500/40 p-2.5 rounded-xl shadow-2xl text-white text-xs space-y-1">
-          <p className="font-extrabold text-amber-300 flex items-center gap-1.5 border-b border-white/10 pb-1">
-            <Target size={13} className="text-amber-400" />
-            {data.rawLength} Harfli Kelimeler
-          </p>
-          <div className="flex justify-between items-center gap-4 text-xs font-mono pt-1">
-            <span className="text-gray-300">Kazanılan Oyun:</span>
-            <span className="font-black text-amber-400">{data['Galibiyet']}</span>
-          </div>
-          <div className="flex justify-between items-center gap-4 text-[10.5px] font-mono text-gray-400">
-            <span>Galibiyet Payı:</span>
-            <span className="font-bold text-amber-200 font-mono">%{data.percentage}</span>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
 
   const handleShare = () => {
     const baseUrl = getBaseUrl();

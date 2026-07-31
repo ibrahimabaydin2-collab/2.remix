@@ -15,6 +15,7 @@ import {
   Shield,
   UserCheck
 } from 'lucide-react';
+import { getDeckRandomLength } from '../data/wordlist';
 import { UserProfile, FriendRequest, isImageUrl } from '../types';
 import { 
   sendFriendRequestInFirestore, 
@@ -31,9 +32,8 @@ interface FriendsModalProps {
   onUpdateFriends: (newFriends: string[]) => void;
   isOnline: boolean;
   lobbyPlayers?: any[];
-  onChallengePlayer?: (player: UserProfile, wordLength: number) => void;
+  onChallengePlayer?: (player: UserProfile, wordLength?: number) => void;
   isChallengePending?: boolean;
-  duelWordLength?: number;
   wordLength?: number;
   showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -46,7 +46,6 @@ export default function FriendsModal({
   lobbyPlayers = [],
   onChallengePlayer,
   isChallengePending = false,
-  duelWordLength = 5,
   wordLength = 5,
   showToast
 }: FriendsModalProps) {
@@ -382,7 +381,7 @@ export default function FriendsModal({
                             <button
                               type="button"
                               disabled={isChallengePending}
-                              onClick={() => onChallengePlayer(friend, Math.floor(Math.random() * 6) + 3)}
+                              onClick={() => onChallengePlayer(friend, getDeckRandomLength())}
                               className={`px-2.5 py-1.5 rounded-xl text-[10.5px] font-black uppercase transition flex items-center gap-1 border ${
                                 isChallengePending
                                   ? 'bg-slate-800 text-slate-500 border-slate-700 opacity-60 cursor-not-allowed'

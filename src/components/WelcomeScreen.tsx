@@ -34,8 +34,6 @@ interface WelcomeScreenProps {
   onChangeGameMode: (mode: 'timed' | 'untimed') => void;
   wordLength: number;
   onChangeWordLength: (length: number) => void;
-  duelWordLength?: number;
-  onChangeDuelWordLength?: (length: number) => void;
   onStartSoloGame: () => void;
   onOpenSettings: () => void;
   onOpenMissions?: () => void;
@@ -57,8 +55,8 @@ interface WelcomeScreenProps {
   onDeductGold?: (amount: number) => Promise<boolean>;
   onClaimDailyReward?: () => Promise<void>;
   onWatchRewardedAdReward?: () => Promise<void>;
-  onStartMatchmaking?: (wordsCount?: number) => void;
-  onChallengePlayer?: (player: { id: string; name: string }, wordLength: number) => void;
+  onStartMatchmaking?: () => void;
+  onChallengePlayer?: (player: { id: string; name: string }, wordLength?: number) => void;
   isChallengePending?: boolean;
   matchmakingStatus?: 'idle' | 'queued';
 }
@@ -72,8 +70,6 @@ export default function WelcomeScreen({
   onChangeGameMode,
   wordLength,
   onChangeWordLength,
-  duelWordLength,
-  onChangeDuelWordLength,
   onStartSoloGame,
   onOpenSettings,
   onOpenMissions,
@@ -102,34 +98,21 @@ export default function WelcomeScreen({
   const [showFriendsModal, setShowFriendsModal] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
+  // Purge legacy duel length cache on load
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('kelimesavasi_duel_word_length');
+      }
+    } catch (e) {}
+  }, []);
+
   const todayStr = new Date().toISOString().split('T')[0];
   const isDailyClaimed = profile?.lastDailyLoginClaim === todayStr;
   
   // Game setup states
   const [showGameSetup, setShowGameSetup] = useState<boolean>(false);
   const [selectedGameModeTab, setSelectedGameModeTab] = useState<'solo' | 'duel'>('solo');
-
-  // Independent Duel Word Length State
-  const [localDuelWordLength, setLocalDuelWordLength] = useState<number>(() => {
-    try {
-      const saved = typeof window !== 'undefined' ? localStorage.getItem('kelimesavasi_duel_word_length') : null;
-      return saved ? parseInt(saved, 10) : 5;
-    } catch (e) {
-      return 5;
-    }
-  });
-
-  const currentDuelWordLength = duelWordLength !== undefined ? duelWordLength : localDuelWordLength;
-
-  const handleDuelWordLengthChange = (len: number) => {
-    setLocalDuelWordLength(len);
-    try {
-      localStorage.setItem('kelimesavasi_duel_word_length', len.toString());
-    } catch (e) {}
-    if (onChangeDuelWordLength) {
-      onChangeDuelWordLength(len);
-    }
-  };
 
   // Real-time bidirectional friends and requests from Firestore
   const [confirmedFriends, setConfirmedFriends] = useState<{ id: string; name: string; avatarUrl?: string; isOnline?: boolean; lastSeen?: number }[]>([]);
@@ -1778,7 +1761,6 @@ export default function WelcomeScreen({
             if (onChallengePlayer) onChallengePlayer(player, wLen);
           }}
           isChallengePending={isChallengePending}
-          duelWordLength={duelWordLength}
           wordLength={wordLength}
         />
       )}

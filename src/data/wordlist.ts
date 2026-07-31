@@ -77,6 +77,42 @@ const ABSOLUTE_FALLBACK_WORDS: { [key: number]: string } = {
   8: 'ÖĞRETMEN'
 };
 
+let wordlistDeck: number[] = [];
+let wordlistHistory: number[] = [];
+
+export function getDeckRandomLength(): number {
+  const allLengths = [3, 4, 5, 6, 7, 8];
+  if (wordlistDeck.length === 0) {
+    wordlistDeck = [...allLengths].sort(() => Math.random() - 0.5);
+  }
+
+  let chosenIndex = wordlistDeck.length - 1;
+  let chosen = wordlistDeck[chosenIndex];
+
+  const hLen = wordlistHistory.length;
+  if (hLen >= 2 && wordlistHistory[hLen - 1] === chosen && wordlistHistory[hLen - 2] === chosen) {
+    const altIndex = wordlistDeck.findIndex(len => len !== chosen);
+    if (altIndex !== -1) {
+      chosenIndex = altIndex;
+      chosen = wordlistDeck[chosenIndex];
+    } else {
+      const alternatives = allLengths.filter(len => len !== chosen);
+      chosen = alternatives[Math.floor(Math.random() * alternatives.length)];
+    }
+  }
+
+  if (chosenIndex >= 0 && chosenIndex < wordlistDeck.length && wordlistDeck[chosenIndex] === chosen) {
+    wordlistDeck.splice(chosenIndex, 1);
+  }
+
+  wordlistHistory.push(chosen);
+  if (wordlistHistory.length > 10) {
+    wordlistHistory.shift();
+  }
+
+  return chosen;
+}
+
 export function getRandomWord(length?: number, isLevel1?: boolean): string {
   if (!length || Number(length) < 3 || Number(length) > 8) {
     console.error(`[getRandomWord WARNING] Requested word length "${length}" is invalid or missing. Picking dynamic length 3-8.`);
@@ -84,7 +120,7 @@ export function getRandomWord(length?: number, isLevel1?: boolean): string {
 
   const targetLength = (length && Number(length) >= 3 && Number(length) <= 8)
     ? Number(length)
-    : (Math.floor(Math.random() * 6) + 3);
+    : getDeckRandomLength();
 
   if (isLevel1) {
     const easyList = EASY_WORDS_LEVEL_1[targetLength];
@@ -119,7 +155,7 @@ export function getRandomWord(length?: number, isLevel1?: boolean): string {
 export function getRandomLiveWord(length?: number): { word: string; length: number } {
   const targetLength = (length && Number(length) >= 3 && Number(length) <= 8)
     ? Number(length)
-    : (Math.floor(Math.random() * 6) + 3);
+    : getDeckRandomLength();
 
   const word = getRandomWord(targetLength);
   return { word, length: targetLength };

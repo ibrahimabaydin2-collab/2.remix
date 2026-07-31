@@ -66,29 +66,52 @@ app.use((req, res, next) => {
   next();
 });
 
-// Global memory & Firestore state to track last game's word length and guarantee consecutive matches never repeat length (3 to 8 letters)
-let lastMatchWordLength = 0;
-
-getDoc(doc(db, 'system', 'matchmaking')).then((snap) => {
-  if (snap.exists() && snap.data()?.lastLength) {
-    lastMatchWordLength = Number(snap.data().lastLength);
-    console.log(`[MATCHMAKING CONFIG] Restored last word length from Firestore: ${lastMatchWordLength}`);
-  }
-}).catch(() => {});
+// Global deck and recent history to guarantee varied room creation (3, 4, 5, 6, 7, 8)
+// and prevent 3 consecutive identical letter lengths.
+let serverMatchLengthDeck: number[] = [];
+let serverRecentMatchLengthsHistory: number[] = [];
 
 function getRandomMatchLength(): number {
-  const allowed = [3, 4, 5, 6, 7, 8];
-  const candidates = allowed.filter(len => len !== lastMatchWordLength);
-  const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-  const previousLength = lastMatchWordLength;
-  lastMatchWordLength = chosen;
-  console.log(`SEÇİLEN HARF SAYISI: ${chosen} (Önceki harf sayısı: ${previousLength})`);
-  setDoc(doc(db, 'system', 'matchmaking'), {
-    lastLength: chosen,
-    updatedAt: new Date().toISOString()
-  }, { merge: true }).catch(err => {
-    console.warn('[Firestore] Failed saving last word length:', err);
-  });
+  const allLengths = [3, 4, 5, 6, 7, 8];
+  
+  if (serverMatchLengthDeck.length === 0) {
+    // Refill and shuffle deck
+    serverMatchLengthDeck = [...allLengths].sort(() => Math.random() - 0.5);
+  }
+
+  // Pick next candidate from deck
+  let chosenIndex = serverMatchLengthDeck.length - 1;
+  let chosen = serverMatchLengthDeck[chosenIndex];
+
+  // Check history: if last two were identical to 'chosen', pick a different candidate
+  const historyLen = serverRecentMatchLengthsHistory.length;
+  if (historyLen >= 2 && 
+      serverRecentMatchLengthsHistory[historyLen - 1] === chosen && 
+      serverRecentMatchLengthsHistory[historyLen - 2] === chosen) {
+    // Find index of first item in deck that is different from 'chosen'
+    const altIndex = serverMatchLengthDeck.findIndex(len => len !== chosen);
+    if (altIndex !== -1) {
+      chosenIndex = altIndex;
+      chosen = serverMatchLengthDeck[chosenIndex];
+    } else {
+      // Fallback: pick any from allLengths except 'chosen'
+      const alternatives = allLengths.filter(len => len !== chosen);
+      chosen = alternatives[Math.floor(Math.random() * alternatives.length)];
+    }
+  }
+
+  // Remove chosen item from deck if it was drawn from deck
+  if (chosenIndex >= 0 && chosenIndex < serverMatchLengthDeck.length && serverMatchLengthDeck[chosenIndex] === chosen) {
+    serverMatchLengthDeck.splice(chosenIndex, 1);
+  }
+
+  // Update history (keep max 10)
+  serverRecentMatchLengthsHistory.push(chosen);
+  if (serverRecentMatchLengthsHistory.length > 10) {
+    serverRecentMatchLengthsHistory.shift();
+  }
+
+  console.log(`[LIVE MATCH] SEÇİLEN RASTGELE HARF SAYISI: ${chosen} (Kalan deste: [${serverMatchLengthDeck.join(', ')}], Geçmiş: [${serverRecentMatchLengthsHistory.slice(-5).join(', ')}])`);
   return chosen;
 }
 
@@ -1880,27 +1903,9 @@ async function startServer() {
           handlePlayerDisconnect(ws);
         } else if (data.type === 'join_room' || data.type === 'join_match') {
           const matchId = data.matchId || data.roomId;
-          const joiningPlayerWordLength = data.wordLength ? Number(data.wordLength) : null;
           const matchObj = activeDuelMatches.get(matchId);
-
           if (matchObj) {
-            const roomWordLength = Number(matchObj.wordLength);
-            // ODAYA KATILIM (JOIN ROOM) HARF KİLİDİ KONTROLÜ:
-            // İkinci oyuncu katılırken, katılmak istenen odanın harf sayısı ile ikinci oyuncunun seçtiği harf sayısı kontrol edilir.
-            // Harf sayıları BİREBİR AYNI DEĞİLSE, sunucu katılmaya KESİNLİKLE İZİN VERMEZ (Reject Join).
-            if (data.strictLengthLock && joiningPlayerWordLength !== null && joiningPlayerWordLength !== roomWordLength) {
-              console.warn(`[Join Room Lock] Rejecting room join! Player requested ${joiningPlayerWordLength} letters, but Room ${matchId} has ${roomWordLength} letters.`);
-              sendWs(ws, {
-                type: 'join_rejected',
-                reason: 'word_length_mismatch',
-                message: `Katılmak istenen oda ${roomWordLength} harflidir. Seçtiğiniz (${joiningPlayerWordLength}) harf sayısı ile birebir aynı değildir.`,
-                roomWordLength,
-                requestedWordLength: joiningPlayerWordLength
-              });
-              // Katılım reddedildiğinde maç odası patlatılmaz, otomatik galibiyet tetiklenmez, sonuç ekranı açılmaz.
-              // İlk oyuncu odasında kalmaya, ikinci oyuncu da kendi harf sayısına uygun oda aramaya devam eder.
-              return;
-            }
+            console.log(`[Join Room] Player joining room ${matchId} with word length ${matchObj.wordLength}`);
           }
         } else if (data.type === 'challenge') {
           const existingClient = connectedClients.get(ws);
@@ -1951,17 +1956,7 @@ async function startServer() {
           const challenge = activeServerChallenges.get(challengeId) || data.challenge;
 
           if (accept) {
-            const challengeWordLength = (challenge?.wordLength && Number(challenge?.wordLength) >= 3 && Number(challenge?.wordLength) <= 8) ? Number(challenge.wordLength) : getRandomMatchLength();
-            const dataWordLength = data.wordLength ? Number(data.wordLength) : challengeWordLength;
-
-            // Strict server-side validation check: both players must have the same word length
-            if (data.wordLength && challenge?.wordLength && Number(data.wordLength) !== Number(challenge.wordLength)) {
-              console.warn(`[Challenge Server] Rejecting match join due to wordLength mismatch: challenge=${challenge.wordLength}, responder=${data.wordLength}`);
-              sendWs(ws, { type: 'error', message: 'Kelime uzunluğu uyuşmazlığı: Düelloya katılan oyuncuların kelime harf sayıları aynı olmalıdır.' });
-              return;
-            }
-
-            const wordLength = challengeWordLength;
+            const wordLength = (challenge?.wordLength && Number(challenge?.wordLength) >= 3 && Number(challenge?.wordLength) <= 8) ? Number(challenge.wordLength) : getRandomMatchLength();
             const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
             const correctWord = turkishUpper(data.targetWord || data.correctWord || challenge?.targetWord || challenge?.correctWord || getRandomWord(wordLength, true));
 

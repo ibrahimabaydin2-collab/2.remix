@@ -27,7 +27,7 @@ import { auth, onAuthStateChanged, fetchUserProfile, saveUserProfileToFirestore,
 import { doc, setDoc, updateDoc, onSnapshot, runTransaction, getDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { UserProfile, GameAttempt, DailyMission, Badge, NetworkLogEntry, isImageUrl } from './types';
 import { Swords, RotateCcw, AlertCircle, HelpCircle, Trophy, UserCheck, Flame, Hourglass, HelpCircle as HelpIcon, Sparkles, Upload, Trash2, Image, X, ArrowLeft, Info, Play, Home, LogOut, Wifi, WifiOff, Zap, Users, ArrowDownFromLine, Flag } from 'lucide-react';
-import { getRandomWord, isWordInCuratedList, getDailyWordAndLength, COMMON_TURKISH_WORDS, CLEANED_TURKISH_WORDS } from './data/wordlist';
+import { getRandomWord, isWordInCuratedList, getDailyWordAndLength, COMMON_TURKISH_WORDS, CLEANED_TURKISH_WORDS, getDeckRandomLength } from './data/wordlist';
 import { turkishUpper, turkishLower, validateTurkishLinguistics } from './utils/turkish';
 import { getApiUrl, getWsUrl, validateWordClientSide } from './utils/api';
 import { calculateDynamicScore, verifyScoringAccuracy, getLevelForScore } from './utils/scoring';
@@ -1307,25 +1307,17 @@ export default function App() {
     safeLocalStorage.setItem('kelimesavasi_game_mode', gameMode);
   }, [gameMode]);
 
-  const [duelWordLength, setDuelWordLength] = useState<number>(() => {
-    const saved = safeLocalStorage.getItem('kelimesavasi_duel_word_length');
-    return saved ? parseInt(saved, 10) : 5;
-  });
-
+  // Legacy duel length cleanup effect
   useEffect(() => {
-    safeLocalStorage.setItem('kelimesavasi_duel_word_length', duelWordLength.toString());
-  }, [duelWordLength]);
+    safeLocalStorage.removeItem('kelimesavasi_duel_word_length');
+    safeLocalStorage.removeItem('kelimesavasi_last_match_len');
+  }, []);
 
   const [matchmakingStatus, setMatchmakingStatus] = useState<'idle' | 'queued'>('idle');
   const matchmakingStatusRef = useRef<'idle' | 'queued'>('idle');
   useEffect(() => {
     matchmakingStatusRef.current = matchmakingStatus;
   }, [matchmakingStatus]);
-
-  const duelWordLengthRef = useRef<number>(duelWordLength);
-  useEffect(() => {
-    duelWordLengthRef.current = duelWordLength;
-  }, [duelWordLength]);
 
   // Settings state moved up to avoid block scope issues with notification effects
   const [settings, setSettings] = useState<AppSettings>(() => {
@@ -2181,8 +2173,6 @@ export default function App() {
                   wordLength: matchLen
                 });
                 setWordLength(matchLen);
-                setDuelWordLength(matchLen);
-                duelWordLengthRef.current = matchLen;
               } else if (data.type === 'match_ready') {
                 setAttempts([]);
                 setCurrentAttempt('');
@@ -2205,8 +2195,6 @@ export default function App() {
 
                 setTargetWord(target);
                 setWordLength(matchLen);
-                setDuelWordLength(matchLen);
-                duelWordLengthRef.current = matchLen;
 
                 const cleanPlayers = { ...parsedPlayers };
                 Object.keys(cleanPlayers).forEach(k => {
@@ -2266,8 +2254,6 @@ export default function App() {
 
                 setTargetWord(target);
                 setWordLength(matchLen);
-                setDuelWordLength(matchLen);
-                duelWordLengthRef.current = matchLen;
 
                 const { player1: p1, player2: p2, players: parsedPlayers } = resolveDuelPlayers(data.player1, data.player2, profile, data.players);
 
@@ -4119,8 +4105,6 @@ export default function App() {
         target = turkishUpper(getRandomWord(matchWordLen, true));
         setTargetWord(target);
         setWordLength(matchWordLen);
-        setDuelWordLength(matchWordLen);
-        duelWordLengthRef.current = matchWordLen;
         if (activeMatch) {
           const matchId = activeMatch.matchId || activeMatch.id;
           setActiveMatch((prev: any) => prev ? { ...prev, targetWord: target, correctWord: target, wordLength: matchWordLen } : prev);
@@ -5010,7 +4994,7 @@ export default function App() {
     const challengeId = 'chal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const now = Date.now();
     const expiresAt = now + 10000;
-    const challengeWordLen = (length && length >= 3 && length <= 8) ? length : (Math.floor(Math.random() * 6) + 3);
+    const challengeWordLen = (length && length >= 3 && length <= 8) ? length : getClientRandomMatchLength();
 
     const challengeData = {
       id: challengeId,
@@ -5122,7 +5106,7 @@ export default function App() {
       completelyResetMatchState();
 
       const targetData = challengeObj || activeChallenges.find(c => c.id === challengeId);
-      const targetLength = Number(targetData?.wordLength || (Math.floor(Math.random() * 6) + 3));
+      const targetLength = Number(targetData?.wordLength || getClientRandomMatchLength());
 
       const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
       const correctWord = turkishUpper(getRandomWord(targetLength, true));
@@ -5195,8 +5179,6 @@ export default function App() {
 
       setTargetWord(correctWord);
       setWordLength(targetLength);
-      setDuelWordLength(targetLength);
-      duelWordLengthRef.current = targetLength;
 
       const { player1: p1, player2: p2, players: parsedPlayers } = resolveDuelPlayers(
         initialFirestoreMatch.player1,
@@ -5298,17 +5280,10 @@ export default function App() {
   const clearMatchmakingState = clearAllFirestoreMatchmakingQueues;
 
   const getClientRandomMatchLength = (): number => {
-    const allowed = [3, 4, 5, 6, 7, 8];
-    const savedLast = safeLocalStorage.getItem('kelimesavasi_last_match_len');
-    const lastLen = savedLast ? parseInt(savedLast, 10) : 0;
-    const candidates = allowed.filter(len => len !== lastLen);
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-    safeLocalStorage.setItem('kelimesavasi_last_match_len', chosen.toString());
-    console.log(`[CLIENT MATCHMAKING] SEÇİLEN HARF SAYISI: ${chosen} (Önceki harf sayısı: ${lastLen})`);
-    return chosen;
+    return getDeckRandomLength();
   };
 
-  const handleStartMatchmaking = async (matchWordsCount?: number) => {
+  const handleStartMatchmaking = async () => {
     if (isMatchmakingLocked) {
       showToast('Eşleşme kuyruğuna giriş geçici olarak kilitlendi. Lütfen birkaç saniye bekleyin.', 'info');
       return;
@@ -5455,8 +5430,6 @@ export default function App() {
             });
             setTargetWord(word);
             setWordLength(matchLen);
-            setDuelWordLength(matchLen);
-            duelWordLengthRef.current = matchLen;
             setAttempts([]);
             setCurrentAttempt('');
             setLetterStatuses({});
@@ -6070,8 +6043,6 @@ export default function App() {
             onChangeGameMode={setGameMode}
             wordLength={wordLength}
             onChangeWordLength={setWordLength}
-            duelWordLength={duelWordLength}
-            onChangeDuelWordLength={setDuelWordLength}
             onStartSoloGame={() => {
               setHasEnteredGame(true);
             }}
@@ -6089,8 +6060,8 @@ export default function App() {
             onDeductGold={deductGold}
             onClaimDailyReward={handleClaimDailyReward}
             onWatchRewardedAdReward={handleWatchRewardedAdReward}
-            onStartMatchmaking={async (wordsCount) => {
-              await handleStartMatchmaking(wordsCount);
+            onStartMatchmaking={async () => {
+              await handleStartMatchmaking();
             }}
             onChallengePlayer={handleChallengePlayer}
             matchmakingStatus={matchmakingStatus}
@@ -6210,7 +6181,7 @@ export default function App() {
                     <div className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500/20 to-amber-600/10 border border-amber-500/35 flex items-center gap-1.5 shadow-inner">
                       <Swords size={13} className="text-amber-400 shrink-0 animate-pulse" />
                       <span className="text-[10px] sm:text-xs font-black font-mono tracking-wider text-amber-300 uppercase">
-                        {targetWord?.length || activeMatch?.wordLength || duelWordLength || 5} HARFLİ DÜELLO
+                        {targetWord?.length || activeMatch?.wordLength || 5} HARFLİ DÜELLO
                       </span>
                     </div>
                   </div>
@@ -7192,7 +7163,6 @@ export default function App() {
             handleChallengePlayer(player, wLen);
           }}
           isChallengePending={Boolean(pendingSentChallenge)}
-          duelWordLength={duelWordLength}
           wordLength={wordLength}
           showToast={showToast}
         />
