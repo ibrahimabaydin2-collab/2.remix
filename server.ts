@@ -66,6 +66,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global memory & Firestore state to track last game's word length and guarantee consecutive matches never repeat length (3 to 8 letters)
+let lastMatchWordLength = 0;
+
+getDoc(doc(db, 'system', 'matchmaking')).then((snap) => {
+  if (snap.exists() && snap.data()?.lastLength) {
+    lastMatchWordLength = Number(snap.data().lastLength);
+    console.log(`[MATCHMAKING CONFIG] Restored last word length from Firestore: ${lastMatchWordLength}`);
+  }
+}).catch(() => {});
+
+function getRandomMatchLength(): number {
+  const allowed = [3, 4, 5, 6, 7, 8];
+  const candidates = allowed.filter(len => len !== lastMatchWordLength);
+  const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+  const previousLength = lastMatchWordLength;
+  lastMatchWordLength = chosen;
+  console.log(`SEÇİLEN HARF SAYISI: ${chosen} (Önceki harf sayısı: ${previousLength})`);
+  setDoc(doc(db, 'system', 'matchmaking'), {
+    lastLength: chosen,
+    updatedAt: new Date().toISOString()
+  }, { merge: true }).catch(err => {
+    console.warn('[Firestore] Failed saving last word length:', err);
+  });
+  return chosen;
+}
+
 // Initialize Gemini Client
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -608,7 +634,7 @@ app.post('/api/send-challenge-notification', async (req, res) => {
     void sendFcmChallengeNotification({
       challengedId,
       challengerName: challengerName || 'Bir arkadaşın',
-      wordLength: (wordLength && Number(wordLength) >= 3 && Number(wordLength) <= 8) ? Number(wordLength) : (Math.floor(Math.random() * 6) + 3),
+      wordLength: (wordLength && Number(wordLength) >= 3 && Number(wordLength) <= 8) ? Number(wordLength) : getRandomMatchLength(),
       challengeId,
       isOffline: Boolean(isOffline)
     }).catch(() => {});
@@ -1382,8 +1408,8 @@ async function startServer() {
           deleteDoc(doc(db, col, sub2.player.id)).catch(() => {});
         });
 
-        // 1. HARF UZUNLUĞUNU SUNUCU RASTGELE SEÇER (3 ile 8 arasında)
-        const matchLength = Math.floor(Math.random() * 6) + 3; // 3..8
+        // 1. HARF UZUNLUĞUNU SUNUCU RASTGELE SEÇER (3 ile 8 arasında, ardışık tekrarsız)
+        const matchLength = getRandomMatchLength();
         const matchId = 'match_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
         const correctWord = turkishUpper(getRandomWord(matchLength, true));
 
@@ -1847,7 +1873,7 @@ async function startServer() {
             // ODAYA KATILIM (JOIN ROOM) HARF KİLİDİ KONTROLÜ:
             // İkinci oyuncu katılırken, katılmak istenen odanın harf sayısı ile ikinci oyuncunun seçtiği harf sayısı kontrol edilir.
             // Harf sayıları BİREBİR AYNI DEĞİLSE, sunucu katılmaya KESİNLİKLE İZİN VERMEZ (Reject Join).
-            if (joiningPlayerWordLength !== null && joiningPlayerWordLength !== roomWordLength) {
+            if (data.strictLengthLock && joiningPlayerWordLength !== null && joiningPlayerWordLength !== roomWordLength) {
               console.warn(`[Join Room Lock] Rejecting room join! Player requested ${joiningPlayerWordLength} letters, but Room ${matchId} has ${roomWordLength} letters.`);
               sendWs(ws, {
                 type: 'join_rejected',
@@ -1867,7 +1893,7 @@ async function startServer() {
           const challengerName = data.challengerName || existingClient?.name || 'Bir arkadaşın';
           const challengerAvatar = data.challengerAvatar || existingClient?.avatarUrl || '';
           const challengedId = data.challengedId;
-          const wordLength = (data.wordLength && Number(data.wordLength) >= 3 && Number(data.wordLength) <= 8) ? Number(data.wordLength) : (Math.floor(Math.random() * 6) + 3);
+          const wordLength = (data.wordLength && Number(data.wordLength) >= 3 && Number(data.wordLength) <= 8) ? Number(data.wordLength) : getRandomMatchLength();
           const challengeId = data.challengeId || ('chal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
           const challengeObj = {
@@ -1910,7 +1936,7 @@ async function startServer() {
           const challenge = activeServerChallenges.get(challengeId) || data.challenge;
 
           if (accept) {
-            const challengeWordLength = (challenge?.wordLength && Number(challenge?.wordLength) >= 3 && Number(challenge?.wordLength) <= 8) ? Number(challenge.wordLength) : (Math.floor(Math.random() * 6) + 3);
+            const challengeWordLength = (challenge?.wordLength && Number(challenge?.wordLength) >= 3 && Number(challenge?.wordLength) <= 8) ? Number(challenge.wordLength) : getRandomMatchLength();
             const dataWordLength = data.wordLength ? Number(data.wordLength) : challengeWordLength;
 
             // Strict server-side validation check: both players must have the same word length

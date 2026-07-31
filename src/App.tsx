@@ -2082,10 +2082,8 @@ export default function App() {
               }));
 
               if (matchmakingStatusRef.current === 'queued') {
-                const targetLen = duelWordLengthRef.current || 5;
                 ws?.send(JSON.stringify({
                   type: 'join_matchmaking',
-                  wordLength: targetLen,
                   id: profile.id,
                   userId: profile.id,
                   playerId: profile.id,
@@ -2147,6 +2145,9 @@ export default function App() {
                 return 0;
               };
               const incomingLen = parseLen(data);
+              if (!incomingLen) {
+                console.error('[WORD LENGTH FALLBACK WARNING] incomingLen returned 0 from WebSocket data payload:', data);
+              }
 
               if (data.type === 'match_found' || data.type === 'match_joined') {
                 setMatchmakingStatus('idle');
@@ -2166,7 +2167,7 @@ export default function App() {
                 const { player1: p1, player2: p2, players: parsedPlayers } = resolveDuelPlayers(data.player1, data.player2, profile, data.players);
 
                 const target = turkishUpper(data.targetWord || data.correctWord || '');
-                const matchLen = incomingLen || 5;
+                const matchLen = incomingLen || getClientRandomMatchLength();
                 if (target) setTargetWord(target);
                 setActiveMatch({
                   id: data.matchId,
@@ -2200,7 +2201,7 @@ export default function App() {
 
                 const { player1: p1, player2: p2, players: parsedPlayers } = resolveDuelPlayers(data.player1, data.player2, profile, data.players);
                 const target = turkishUpper(data.targetWord || data.correctWord || '');
-                const matchLen = incomingLen || 5;
+                const matchLen = incomingLen || getClientRandomMatchLength();
 
                 setTargetWord(target);
                 setWordLength(matchLen);
@@ -2261,7 +2262,7 @@ export default function App() {
                 }
 
                 const target = turkishUpper(data.targetWord || data.correctWord || '');
-                const matchLen = incomingLen || 5;
+                const matchLen = incomingLen || getClientRandomMatchLength();
 
                 setTargetWord(target);
                 setWordLength(matchLen);
@@ -2343,7 +2344,11 @@ export default function App() {
               setActiveMatch((prev: any) => {
                 if (!prev) return null;
                 const updatedPlayers = { ...(prev.players || {}) };
-                const currentLen = prev.targetWord?.length || prev.wordLength || targetWord?.length || wordLength || 6;
+                let currentLen = prev.targetWord?.length || prev.wordLength || targetWord?.length || wordLength;
+                if (!currentLen) {
+                  console.error('[WORD LENGTH FALLBACK WARNING] opponent_attempt had no word length on match state:', prev);
+                  currentLen = getClientRandomMatchLength();
+                }
 
                 let updatedAnyOpponent = false;
                 Object.keys(updatedPlayers).forEach((key) => {
@@ -2726,7 +2731,10 @@ export default function App() {
     if (!matchObj) return;
 
     const matchId = matchObj.matchId || matchObj.id;
-    const matchLen = Number(matchObj.wordLength || wordLength || 5);
+    const matchLen = Number(matchObj.wordLength || wordLength) || getClientRandomMatchLength();
+    if (!matchObj.wordLength && !wordLength) {
+      console.error('[WORD LENGTH FALLBACK WARNING] handleStartMatchedGame had missing wordLength on matchObj:', matchObj);
+    }
     const target = turkishUpper(matchObj.targetWord || matchObj.correctWord || targetWord || '');
 
     isMatchEndedRef.current = false;
@@ -5289,6 +5297,17 @@ export default function App() {
   };
   const clearMatchmakingState = clearAllFirestoreMatchmakingQueues;
 
+  const getClientRandomMatchLength = (): number => {
+    const allowed = [3, 4, 5, 6, 7, 8];
+    const savedLast = safeLocalStorage.getItem('kelimesavasi_last_match_len');
+    const lastLen = savedLast ? parseInt(savedLast, 10) : 0;
+    const candidates = allowed.filter(len => len !== lastLen);
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    safeLocalStorage.setItem('kelimesavasi_last_match_len', chosen.toString());
+    console.log(`[CLIENT MATCHMAKING] SEÇİLEN HARF SAYISI: ${chosen} (Önceki harf sayısı: ${lastLen})`);
+    return chosen;
+  };
+
   const handleStartMatchmaking = async (matchWordsCount?: number) => {
     if (isMatchmakingLocked) {
       showToast('Eşleşme kuyruğuna giriş geçici olarak kilitlendi. Lütfen birkaç saniye bekleyin.', 'info');
@@ -5406,7 +5425,11 @@ export default function App() {
               }
               return;
             }
-            const matchLen = Number(data.wordLength) || (data.correctWord || data.targetWord || '').length || 5;
+            let matchLen = Number(data.wordLength) || (data.correctWord || data.targetWord || '').length;
+            if (!matchLen) {
+              console.error('[WORD LENGTH FALLBACK WARNING] Firestore Queue Snapshot missing wordLength:', data);
+              matchLen = getClientRandomMatchLength();
+            }
             console.log("[Firestore Matchmaking] Matched via Firestore snapshot! Match ID:", data.matchId, "Word Length:", matchLen);
             const word = data.correctWord || data.targetWord;
             
@@ -5457,7 +5480,7 @@ export default function App() {
       // Search Firestore queue ONLY if WebSocket is not active as a fallback, to prevent dual-engine race conditions
       const isWsActive = socketRef.current && socketRef.current.readyState === WebSocket.OPEN;
       if (!isWsActive) {
-        const randLength = Math.floor(Math.random() * 6) + 3;
+        const randLength = getClientRandomMatchLength();
         let querySnap;
         try {
           const qStrict = query(

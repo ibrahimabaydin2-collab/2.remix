@@ -45,6 +45,10 @@ const ABSOLUTE_FALLBACK_WORDS: { [key: number]: string } = {
 };
 
 export function getRandomWord(length?: number, isLevel1?: boolean): string {
+  if (!length || Number(length) < 3 || Number(length) > 8) {
+    console.error(`[getRandomWord WARNING] Requested word length "${length}" is invalid or missing. Picking dynamic length 3-8.`);
+  }
+
   const targetLength = (length && Number(length) >= 3 && Number(length) <= 8)
     ? Number(length)
     : (Math.floor(Math.random() * 6) + 3);
@@ -64,6 +68,7 @@ export function getRandomWord(length?: number, isLevel1?: boolean): string {
   const filteredWords = words.filter(word => word.trim().length === targetLength);
 
   if (!filteredWords || filteredWords.length === 0) {
+    console.error(`[getRandomWord ERROR] No words found for length ${targetLength}, falling back to ABSOLUTE_FALLBACK_WORDS.`);
     return ABSOLUTE_FALLBACK_WORDS[targetLength] || 'KALEM';
   }
 
@@ -71,6 +76,7 @@ export function getRandomWord(length?: number, isLevel1?: boolean): string {
   const upper = turkishUpper(word.trim());
 
   if (upper.length !== targetLength) {
+    console.error(`[getRandomWord ERROR] Word length mismatch! "${upper}" (${upper.length}) !== target ${targetLength}`);
     return ABSOLUTE_FALLBACK_WORDS[targetLength] || 'KALEM';
   }
 
