@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface GoldWalletProps {
@@ -7,7 +7,7 @@ interface GoldWalletProps {
   onClick?: () => void;
 }
 
-export default function GoldWallet({ gold, className = '', onClick }: GoldWalletProps) {
+function GoldWallet({ gold, className = '', onClick }: GoldWalletProps) {
   const [animateKey, setAnimateKey] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
   const [prevGold, setPrevGold] = useState(gold);
@@ -157,3 +157,5 @@ export default function GoldWallet({ gold, className = '', onClick }: GoldWallet
     </div>
   );
 }
+
+export default memo(GoldWallet);

@@ -280,6 +280,7 @@ public class MainActivity extends BridgeActivity {
         if (mWebView != null) {
             try {
                 mWebView.onPause();
+                mWebView.pauseTimers();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -294,6 +295,7 @@ public class MainActivity extends BridgeActivity {
         if (mWebView != null) {
             try {
                 mWebView.onPause();
+                mWebView.pauseTimers();
             } catch (Exception e) {
                 e.printStackTrace();
             }

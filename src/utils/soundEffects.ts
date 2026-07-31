@@ -1,8 +1,74 @@
 // Web Audio API Sound Effects Synthesizer for TDK Savaşçısı Word Game
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
+
 let audioCtx: AudioContext | null = null;
+let isAppForeground = typeof document !== 'undefined'
+  ? !document.hidden && document.visibilityState === 'visible'
+  : true;
+
+/**
+ * Checks if audio playback is currently allowed.
+ * Prevents any audio generation when the app is in background, inactive, or hidden.
+ */
+export function isAudioAllowed(): boolean {
+  if (!isAppForeground) return false;
+  if (typeof document !== 'undefined') {
+    if (document.hidden || document.visibilityState !== 'visible') {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Global lifecycle listeners for visibility and background status
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    isAppForeground = !document.hidden && document.visibilityState === 'visible';
+    if (!isAppForeground) {
+      suspendAudioContext();
+    } else {
+      resumeAudioContext();
+    }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('blur', () => {
+    isAppForeground = false;
+    suspendAudioContext();
+  });
+
+  window.addEventListener('focus', () => {
+    if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
+      isAppForeground = true;
+      resumeAudioContext();
+    }
+  });
+
+  // Native Capacitor AppState Listener for background protection
+  if (Capacitor.isNativePlatform()) {
+    try {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        isAppForeground = isActive;
+        if (!isActive) {
+          suspendAudioContext();
+        } else {
+          if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
+            resumeAudioContext();
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('Capacitor App state listener setup warning:', e);
+    }
+  }
+}
 
 function getAudioContext(): AudioContext | null {
+  if (!isAudioAllowed()) return null;
   if (typeof window === 'undefined') return null;
+
   if (!audioCtx) {
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -15,8 +81,8 @@ function getAudioContext(): AudioContext | null {
     }
   }
   
-  // Resume context if suspended (e.g. due to user gesture policy)
-  if (audioCtx && audioCtx.state === 'suspended') {
+  // Resume context if suspended (e.g. due to user gesture policy or app returning to foreground)
+  if (audioCtx && audioCtx.state === 'suspended' && isAudioAllowed()) {
     try {
       audioCtx.resume();
     } catch (e) {
@@ -31,6 +97,7 @@ function getAudioContext(): AudioContext | null {
  * Suspends the sound synthesizer context when app goes to background
  */
 export function suspendAudioContext() {
+  isAppForeground = false;
   if (audioCtx && audioCtx.state === 'running') {
     audioCtx.suspend().catch(e => console.warn('Failed to suspend AudioContext:', e));
   }
@@ -40,6 +107,10 @@ export function suspendAudioContext() {
  * Resumes the sound synthesizer context when app comes to foreground
  */
 export function resumeAudioContext() {
+  if (typeof document !== 'undefined' && (document.hidden || document.visibilityState !== 'visible')) {
+    return;
+  }
+  isAppForeground = true;
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume().catch(e => console.warn('Failed to resume AudioContext:', e));
   }
@@ -49,7 +120,7 @@ export function resumeAudioContext() {
  * Play a standard key press/click sound
  */
 export function playClickSound(enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -75,7 +146,7 @@ export function playClickSound(enabled: boolean) {
  * Play a deletion sound
  */
 export function playDeleteSound(enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -100,7 +171,7 @@ export function playDeleteSound(enabled: boolean) {
  * Play an enter/word submission feedback sound (neutral to pleasant)
  */
 export function playEnterSound(enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -127,7 +198,7 @@ export function playEnterSound(enabled: boolean) {
  * Play an error / invalid word buzz sound
  */
 export function playErrorSound(enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -160,7 +231,7 @@ export function playErrorSound(enabled: boolean) {
  * Play a grand victory arpeggio sound sequence (Havai Fişek & Galibiyet Sesi)
  */
 export function playVictorySound(enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -169,6 +240,7 @@ export function playVictorySound(enabled: boolean) {
   
   // Play sparkling arpeggio notes in sequence
   notes.forEach((freq, idx) => {
+    if (!isAudioAllowed()) return;
     const osc = ctx!.createOscillator();
     const gain = ctx!.createGain();
     
@@ -190,22 +262,25 @@ export function playVictorySound(enabled: boolean) {
 
   // Add a warm brassy root chord in the background
   setTimeout(() => {
+    if (!isAudioAllowed()) return;
+    const currentCtx = getAudioContext();
+    if (!currentCtx) return;
     const chordNotes = [261.63, 329.63, 392.00, 523.25]; // C Major Chord
     chordNotes.forEach((freq) => {
-      const osc = ctx!.createOscillator();
-      const gain = ctx!.createGain();
+      const osc = currentCtx.createOscillator();
+      const gain = currentCtx.createGain();
       
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx!.currentTime);
+      osc.frequency.setValueAtTime(freq, currentCtx.currentTime);
       
-      gain.gain.setValueAtTime(0.06, ctx!.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + 0.8);
+      gain.gain.setValueAtTime(0.06, currentCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, currentCtx.currentTime + 0.8);
       
       osc.connect(gain);
-      gain.connect(ctx!.destination);
+      gain.connect(currentCtx.destination);
       
       osc.start();
-      osc.stop(ctx!.currentTime + 0.8);
+      osc.stop(currentCtx.currentTime + 0.8);
     });
   }, 480);
 }
@@ -214,7 +289,7 @@ export function playVictorySound(enabled: boolean) {
  * Play a melancholic defeat arpeggio/chord sound sequence
  */
 export function playDefeatSound(enabled: boolean) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -223,6 +298,7 @@ export function playDefeatSound(enabled: boolean) {
   const notes = [392.00, 311.13, 261.63]; 
   
   notes.forEach((freq, idx) => {
+    if (!isAudioAllowed()) return;
     const osc = ctx!.createOscillator();
     const gain = ctx!.createGain();
     
@@ -248,22 +324,25 @@ export function playDefeatSound(enabled: boolean) {
 
   // Low rumbling detuned background bass drone
   setTimeout(() => {
+    if (!isAudioAllowed()) return;
+    const currentCtx = getAudioContext();
+    if (!currentCtx) return;
     const bassFreqs = [130.81, 131.81]; // C3 detuned
     bassFreqs.forEach((freq) => {
-      const osc = ctx!.createOscillator();
-      const gain = ctx!.createGain();
+      const osc = currentCtx.createOscillator();
+      const gain = currentCtx.createGain();
       
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx!.currentTime);
+      osc.frequency.setValueAtTime(freq, currentCtx.currentTime);
       
-      gain.gain.setValueAtTime(0.1, ctx!.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + 1.2);
+      gain.gain.setValueAtTime(0.1, currentCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, currentCtx.currentTime + 1.2);
       
       osc.connect(gain);
-      gain.connect(ctx!.destination);
+      gain.connect(currentCtx.destination);
       
       osc.start();
-      osc.stop(ctx!.currentTime + 1.2);
+      osc.stop(currentCtx.currentTime + 1.2);
     });
   }, 360);
 }
@@ -272,7 +351,7 @@ export function playDefeatSound(enabled: boolean) {
  * Play a suspenseful, rhythmic and deep tick-tock/warning sound for the countdown (son 5 saniye)
  */
 export function playCountdownBeepSound(enabled: boolean, secondsLeft: number) {
-  if (!enabled) return;
+  if (!enabled || !isAudioAllowed()) return;
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -331,3 +410,4 @@ export function playCountdownBeepSound(enabled: boolean, secondsLeft: number) {
     osc2.stop(now + 0.22);
   }
 }
+

@@ -174,9 +174,9 @@ export default function PrivacyPolicyModal({ isOpen, onClose }: PrivacyPolicyMod
                     Uygulamamız, Google Play Store standartlarına tam uyumlu olarak yalnızca oyun içi özelliklerin çalışabilmesi için gerekli durumlarda kullanıcıdan onay alarak şu izinleri talep eder:
                   </p>
                   <ul className="list-disc list-inside pl-2 space-y-1">
-                    <li><strong>Kamera & Galeri İzni:</strong> Profil resmi belirleme veya özel oyun içi görsellerinizi kişiselleştirme amacıyla isteğe bağlı olarak kullanılır. Fotoğraflarınız kesinlikle sunucularımıza yüklenmez ve üçüncü şahıslarla paylaşılmaz.</li>
-                    <li><strong>Mikrofon (Ses) İzni:</strong> Oyun içi canlı düellolarda veya sesle kelime doğrulama gibi etkileşimli özelliklerde anlık olarak ses algılama için kullanılır. Hiçbir ses kaydı cihazınızın dışına çıkmaz ve kaydedilmez.</li>
-                    <li><strong>Yerel Bildirimler:</strong> Günün kelimesi hazır olduğunda sabah saat 09:00'da sizi bilgilendirmek ve hareketsizlik hatırlatıcıları göndermek amacıyla yerel zamanlayıcılar aracılığıyla tetiklenir. Bu bildirimler cihaz tabanlıdır ve internet bağlantısı gerektirmez. İstediğiniz zaman Ayarlar menüsünden tamamen kapatabilirsiniz.</li>
+                    <li><strong>İnternet ve Ağ Erişimi:</strong> Canlı multiplayer eşleşmeler, kelime doğrulaması ve reklam gösterimi için gereklidir.</li>
+                    <li><strong>Kamera İzni (İhtiyaç Anında):</strong> Yalnızca profil resmi alanında 'Fotoğraf Çek' butonuna basıldığında isteğe bağlı olarak anlık onay istenir. Uygulama açılışında kesinlikle istenmez.</li>
+                    <li><strong>Yerel ve Anlık Bildirimler:</strong> Günün kelimesi hazır olduğunda ve özel oyun etkinliklerinde bilgilendirmek amacıyla kullanılır. Dilediğiniz zaman Ayarlar menüsünden tamamen kapatabilirsiniz.</li>
                   </ul>
                 </div>
               </div>
@@ -353,9 +353,9 @@ export default function PrivacyPolicyModal({ isOpen, onClose }: PrivacyPolicyMod
                     Our application requests runtime permissions only when strictly necessary for core features:
                   </p>
                   <ul className="list-disc list-inside pl-2 space-y-1">
-                    <li><strong>Camera & Gallery:</strong> Used optionially to personalize your profile picture. Your photos are never uploaded or stored on our servers.</li>
-                    <li><strong>Microphone (Audio):</strong> Used temporarily during live challenges or voice inputs. No voice records are sent outside your device.</li>
-                    <li><strong>Local Notifications:</strong> Scheduled locally at 09:00 AM to deliver fresh daily words and friendly retention reminders. You can toggle this off in the settings anytime.</li>
+                    <li><strong>Internet & Network Access:</strong> Required for live multiplayer matchmaking, word verification, and AdMob ads.</li>
+                    <li><strong>Camera Permission (On-Demand):</strong> Requested strictly at runtime when clicking 'Take Photo' for profile picture customization. Never requested at launch.</li>
+                    <li><strong>Notifications:</strong> Used to notify you about daily puzzles and game events. You can disable this anytime in Settings.</li>
                   </ul>
                 </div>
               </div>

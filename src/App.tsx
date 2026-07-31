@@ -27,7 +27,7 @@ import { auth, onAuthStateChanged, fetchUserProfile, saveUserProfileToFirestore,
 import { doc, setDoc, updateDoc, onSnapshot, runTransaction, getDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { UserProfile, GameAttempt, DailyMission, Badge, NetworkLogEntry, isImageUrl } from './types';
 import { Swords, RotateCcw, AlertCircle, HelpCircle, Trophy, UserCheck, Flame, Hourglass, HelpCircle as HelpIcon, Sparkles, Upload, Trash2, Image, X, ArrowLeft, Info, Play, Home, LogOut, Wifi, WifiOff, Zap, Users, ArrowDownFromLine, Flag } from 'lucide-react';
-import { getRandomWord, isWordInCuratedList, getDailyWordAndLength, COMMON_TURKISH_WORDS, CLEANED_TURKISH_WORDS, getDeckRandomLength } from './data/wordlist';
+import { getRandomWord, isWordInCuratedList, getDailyWordAndLength, getTodayDateStr, COMMON_TURKISH_WORDS, CLEANED_TURKISH_WORDS, getDeckRandomLength } from './data/wordlist';
 import { turkishUpper, turkishLower, validateTurkishLinguistics } from './utils/turkish';
 import { getApiUrl, getWsUrl, validateWordClientSide } from './utils/api';
 import { calculateDynamicScore, verifyScoringAccuracy, getLevelForScore } from './utils/scoring';
@@ -35,6 +35,7 @@ import { getCachedWord, setCachedWord } from './utils/wordCache';
 import { scheduleDailyNotifications } from './utils/notifications';
 import { ADMOB_CONFIG, syncAdMobWithNativeBridge, triggerRewardedAdWatch } from './utils/admob';
 import AdMobBanner from './components/AdMobBanner';
+import GameTimerDisplay from './components/GameTimerDisplay';
 
 const INITIAL_STATS = {
   gamesPlayed: 0,
@@ -767,81 +768,6 @@ export default function App() {
     };
   }, []);
 
-  if (isConnectPage) {
-    const searchParams = new URLSearchParams(window.location.search);
-    const token = searchParams.get('token') || '';
-    const server = searchParams.get('server') || 'pre';
-    const deepLinkUrl = `kelimesavasi://connect?token=${encodeURIComponent(token)}&server=${server}`;
-    const webFallbackUrl = `/?___aistudio_auth_token=${encodeURIComponent(token)}`;
-
-    return (
-      <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-300 ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'}`}>
-        <div className="w-full max-w-md bg-white dark:bg-gray-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-2xl text-center space-y-6 animate-scale-up">
-          {/* Header */}
-          <div className="space-y-2">
-            <div className="mx-auto w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white text-3xl font-black">
-              W
-            </div>
-            <h2 className="text-xl font-black tracking-tight font-sans">Kelime Savaşı Mobil Bağlantı</h2>
-            <p className="text-xs text-gray-400 dark:text-gray-500 font-sans">Telefonunuzdaki yüklü uygulamayı otomatik olarak internete bağlayın</p>
-          </div>
-
-          {/* Action Card */}
-          <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 p-5 rounded-2xl space-y-4">
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed text-left font-sans">
-              Bu sayfa, telefonunuzdaki Kelime Savaşı APK/AAB uygulamasının bulut sunucularına güvenli bir şekilde erişmesini sağlar.
-            </p>
-
-            <button
-              onClick={() => {
-                window.location.href = deepLinkUrl;
-              }}
-              className="w-full py-4 px-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition flex items-center justify-center gap-2 cursor-pointer font-sans"
-            >
-              <Swords size={16} />
-              MOBİL UYGULAMADA AÇ VE BAĞLAN
-            </button>
-          </div>
-
-          {/* Steps */}
-          <div className="text-left space-y-3.5 px-1">
-            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-sans">Nasıl Bağlanır?</h4>
-            <div className="flex gap-3 items-start">
-              <span className="w-5 h-5 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-sans">1</span>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-sans">
-                Samsung/Android telefonunuzda Kelime Savaşı uygulamasının yüklü olduğundan emin olun.
-              </p>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-5 h-5 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-sans">2</span>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-sans">
-                Yukarıdaki yeşil <strong>"MOBİL UYGULAMADA AÇ VE BAĞLAN"</strong> butonuna tıklayın.
-              </p>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-5 h-5 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-sans">3</span>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-sans">
-                Telefonunuz onay istediğinde açılmasına izin verin. Uygulama otomatik açılacak ve internete bağlanacaktır!
-              </p>
-            </div>
-          </div>
-
-          {/* Browser Alternative */}
-          <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80">
-            <button
-              onClick={() => {
-                window.location.href = webFallbackUrl;
-              }}
-              className="text-xs font-bold text-emerald-500 hover:text-emerald-600 transition flex items-center justify-center gap-1.5 mx-auto cursor-pointer font-sans"
-            >
-              <span>Veya bu tarayıcıda oynamaya devam et &rarr;</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // User Profile
   const [profile, setProfile] = useState<UserProfile>(() => {
     const savedGoldStr = safeLocalStorage.getItem('kelimesavasi_gold');
@@ -961,7 +887,7 @@ export default function App() {
   });
 
   // Game Play State
-  const [wordLength, setWordLength] = useState<number>(5);
+  const [wordLength, setWordLength] = useState<number>(() => getDeckRandomLength());
   const [isDailyPuzzle, setIsDailyPuzzle] = useState<boolean>(false);
   const [isDailyPuzzleCompletedToday, setIsDailyPuzzleCompletedToday] = useState<boolean>(() => {
     const todayDateStr = getDailyWordAndLength().dateStr;
@@ -1251,7 +1177,7 @@ export default function App() {
   };
 
   const handleClaimDailyReward = async () => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayDateStr();
     if (profile.lastDailyLoginClaim === todayStr) {
       showToast("Bugünkü günlük giriş ödülünüzü zaten aldınız!", "info");
       return;
@@ -1441,11 +1367,55 @@ export default function App() {
     checkDailyStatusOnStart();
   }, [deviceId]);
 
+  // Midnight (00:00) date rollover listener
+  const lastCheckedDateRef = useRef<string>(getTodayDateStr());
+
+  const refreshDailyStatusesOnDateChange = useCallback(() => {
+    const todayStr = getTodayDateStr();
+    if (lastCheckedDateRef.current !== todayStr) {
+      console.log(`[Date Rollover] Midnight passed! Rolling from ${lastCheckedDateRef.current} to ${todayStr}.`);
+      lastCheckedDateRef.current = todayStr;
+
+      // Re-check daily puzzle status for the new day
+      const storedDaily = readDailyGameStateFromStorage(todayStr);
+      let localCompleted = false;
+      if (storedDaily) {
+        localCompleted = storedDaily.isCompleted;
+      } else {
+        localCompleted = safeLocalStorage.getItem('kelimesavasi_daily_completed_date') === todayStr ||
+                         safeLocalStorage.getItem('last_played_date') === todayStr;
+      }
+
+      if (typeof window !== 'undefined' && (window as any).AndroidBridge && (window as any).AndroidBridge.getDailyPuzzleLastPlayedDate) {
+        try {
+          const nativeDate = (window as any).AndroidBridge.getDailyPuzzleLastPlayedDate();
+          const nativeCompleted = (window as any).AndroidBridge.getDailyPuzzleIsCompleted();
+          if (nativeDate === todayStr && nativeCompleted) {
+            localCompleted = true;
+          }
+        } catch (e) {
+          console.error("Error reading native SharedPreferences for daily puzzle status:", e);
+        }
+      }
+
+      setIsDailyPuzzleCompletedToday(localCompleted);
+      scheduleDailyNotifications();
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      refreshDailyStatusesOnDateChange();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [refreshDailyStatusesOnDateChange]);
+
   // Manage app background / foreground state (visibility change, focus/blur)
   useEffect(() => {
     const handleAppActive = () => {
       setIsAppActive(true);
       resumeAudioContext();
+      refreshDailyStatusesOnDateChange();
       if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
         console.log('[App Active] Socket disconnected or closing, triggering reconnect...');
         setReconnectCounter((prev) => prev + 1);
@@ -2720,8 +2690,8 @@ export default function App() {
     if (!matchObj) return;
 
     const matchId = matchObj.matchId || matchObj.id;
-    const matchLen = Number(matchObj.wordLength || wordLength) || getClientRandomMatchLength();
-    if (!matchObj.wordLength && !wordLength) {
+    const matchLen = Number(matchObj.wordLength) || getClientRandomMatchLength();
+    if (!matchObj.wordLength) {
       console.error('[WORD LENGTH FALLBACK WARNING] handleStartMatchedGame had missing wordLength on matchObj:', matchObj);
     }
     const target = turkishUpper(matchObj.targetWord || matchObj.correctWord || targetWord || '');
@@ -5317,8 +5287,12 @@ export default function App() {
     const hasGold = await deductGold(2);
     if (!hasGold) return;
 
+    // Her yeni eşleşmede dinamik ve rastgele kelime uzunluğu (3-8 harf) belirlenir
+    const initialMatchLen = getClientRandomMatchLength();
+    setWordLength(initialMatchLen);
+
     // RADICAL CLEANUP BEFORE STARTING MATCHMAKING
-    console.log("Global matchmaking starting...");
+    console.log("Global matchmaking starting with dynamic length:", initialMatchLen);
     setMatchmakingStatus('queued');
     setActiveMatch(null);
     setGameStatus('idle');
@@ -5359,7 +5333,8 @@ export default function App() {
           name: selfName,
           username: selfName,
           displayName: selfName,
-          avatarUrl: selfAvatar
+          avatarUrl: selfAvatar,
+          wordLength: initialMatchLen
         };
         console.log('[WebSocket] Sending join_matchmaking:', payload);
         socketRef.current.send(JSON.stringify(payload));
@@ -5382,6 +5357,7 @@ export default function App() {
         username: selfName,
         displayName: selfName,
         avatarUrl: selfAvatar,
+        wordLength: initialMatchLen,
         status: 'waiting',
         createdAt: serverTimestamp(),
         updatedAt: new Date().toISOString()
@@ -5962,6 +5938,81 @@ export default function App() {
 
   const isAndroidApp = typeof window !== 'undefined' && !!(window as any).AndroidBridge;
 
+  if (isConnectPage) {
+    const searchParams = new URLSearchParams(window.location.search);
+    const token = searchParams.get('token') || '';
+    const server = searchParams.get('server') || 'pre';
+    const deepLinkUrl = `kelimesavasi://connect?token=${encodeURIComponent(token)}&server=${server}`;
+    const webFallbackUrl = `/?___aistudio_auth_token=${encodeURIComponent(token)}`;
+
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-300 ${darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'}`}>
+        <div className="w-full max-w-md bg-white dark:bg-gray-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-2xl text-center space-y-6 animate-scale-up">
+          {/* Header */}
+          <div className="space-y-2">
+            <div className="mx-auto w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white text-3xl font-black">
+              W
+            </div>
+            <h2 className="text-xl font-black tracking-tight font-sans">Kelime Savaşı Mobil Bağlantı</h2>
+            <p className="text-xs text-gray-400 dark:text-gray-500 font-sans">Telefonunuzdaki yüklü uygulamayı otomatik olarak internete bağlayın</p>
+          </div>
+
+          {/* Action Card */}
+          <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 p-5 rounded-2xl space-y-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed text-left font-sans">
+              Bu sayfa, telefonunuzdaki Kelime Savaşı APK/AAB uygulamasının bulut sunucularına güvenli bir şekilde erişmesini sağlar.
+            </p>
+
+            <button
+              onClick={() => {
+                window.location.href = deepLinkUrl;
+              }}
+              className="w-full py-4 px-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition flex items-center justify-center gap-2 cursor-pointer font-sans"
+            >
+              <Swords size={16} />
+              MOBİL UYGULAMADA AÇ VE BAĞLAN
+            </button>
+          </div>
+
+          {/* Steps */}
+          <div className="text-left space-y-3.5 px-1">
+            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-sans">Nasıl Bağlanır?</h4>
+            <div className="flex gap-3 items-start">
+              <span className="w-5 h-5 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-sans">1</span>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-sans">
+                Samsung/Android telefonunuzda Kelime Savaşı uygulamasının yüklü olduğundan emin olun.
+              </p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="w-5 h-5 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-sans">2</span>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-sans">
+                Yukarıdaki yeşil <strong>"MOBİL UYGULAMADA AÇ VE BAĞLAN"</strong> butonuna tıklayın.
+              </p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="w-5 h-5 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-sans">3</span>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-sans">
+                Telefonunuz onay istediğinde açılmasına izin verin. Uygulama otomatik açılacak ve internete bağlanacaktır!
+              </p>
+            </div>
+          </div>
+
+          {/* Browser Alternative */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80">
+            <button
+              onClick={() => {
+                window.location.href = webFallbackUrl;
+              }}
+              className="text-xs font-bold text-emerald-500 hover:text-emerald-600 transition flex items-center justify-center gap-1.5 mx-auto cursor-pointer font-sans"
+            >
+              <span>Veya bu tarayıcıda oynamaya devam et &rarr;</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`h-screen max-h-screen overflow-hidden flex flex-col transition-all duration-300 ${getBgThemeClass()} ${getFontFamilyClass()} ${isAndroidApp ? 'android-hybrid' : ''}`}>
       {/* Top Banner Ad Component */}
@@ -6345,28 +6396,12 @@ export default function App() {
                   )}
 
                   <div className="flex items-center gap-2">
-                    {activeMatch ? (
-                      <div className="text-xs font-extrabold font-mono px-2 py-0.5 rounded-lg border bg-amber-500/15 border-amber-500/30 text-amber-400 flex items-center gap-1">
-                        <Swords size={12} className="animate-pulse text-amber-400" />
-                        <span>CANLI DÜELLO</span>
-                      </div>
-                    ) : gameMode === 'timed' && !isDailyPuzzle ? (
-                      <>
-                        <Hourglass size={16} className={`animate-spin ${secondsLeft <= 5 ? 'text-rose-500' : 'text-emerald-500'}`} />
-                        <div className={`text-sm font-bold font-mono px-2 py-0.5 rounded-lg border ${
-                          secondsLeft <= 5
-                            ? 'bg-rose-500/15 border-rose-500/30 text-rose-400 animate-pulse'
-                            : 'bg-black/25 border-[#3E485A] text-emerald-400'
-                        }`}>
-                          {secondsLeft} sn
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-xs font-extrabold font-mono px-2.5 py-0.5 rounded-lg border bg-black/25 border-[#3E485A] text-emerald-400 flex items-center gap-1" title="Süresiz Serbest Mod">
-                        <Hourglass size={14} className="text-emerald-400 animate-pulse" />
-                        <span>♾️</span>
-                      </div>
-                    )}
+                    <GameTimerDisplay
+                      gameMode={gameMode}
+                      isDailyPuzzle={isDailyPuzzle}
+                      activeMatch={activeMatch}
+                      secondsLeft={secondsLeft}
+                    />
                   </div>
                 </>
               ) : (

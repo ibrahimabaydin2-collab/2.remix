@@ -82,23 +82,16 @@
             android:value="ca-app-pub-1284515268865249~3880684614" />
     </application>
 
-    <!-- Permissions -->
+    <!-- Optional Hardware Features so devices without camera can still install from Google Play & Samsung Store -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
+    <!-- Essential Permissions for Online Multiplayer, AdMob, Notifications & Optional Camera -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-
-    <!-- Camera and Audio Permissions -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <!-- Gallery / Storage Permissions -->
-    <!-- For Android 12 and below (API <= 32) -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <!-- For Android 13+ (API >= 33) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-
-    <!-- Notification Permission for Android 13+ (API >= 33) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Camera Permission (Requested strictly on-demand at runtime when user clicks 'Fotoğraf Çek') -->
+    <uses-permission android:name="android.permission.CAMERA" />
 </manifest>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { ADMOB_CONFIG } from '../utils/admob';
 
 interface AdMobBannerProps {
@@ -6,7 +6,7 @@ interface AdMobBannerProps {
   className?: string;
 }
 
-export default function AdMobBanner({ type, className = '' }: AdMobBannerProps) {
+function AdMobBanner({ type, className = '' }: AdMobBannerProps) {
   const isTop = type === 'top';
   const adUnitId = isTop ? ADMOB_CONFIG.TOP_BANNER_ID : ADMOB_CONFIG.BOTTOM_BANNER_ID;
   const placeholderId = isTop ? 'top-ad-placeholder' : 'bottom-ad-placeholder';
@@ -22,3 +22,5 @@ export default function AdMobBanner({ type, className = '' }: AdMobBannerProps) 
     />
   );
 }
+
+export default memo(AdMobBanner);

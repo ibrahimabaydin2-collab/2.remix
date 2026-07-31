@@ -48,6 +48,22 @@ export async function scheduleDailyNotifications() {
         }
       }
 
+      // Create high importance notification channel for heads-up top banners
+      try {
+        await LocalNotifications.createChannel({
+          id: 'kelimesavasi_daily_channel',
+          name: 'Günün Kelimesi Bildirimleri',
+          description: 'Günün kelimesi ve özel kelime oyunu hatırlatıcıları',
+          importance: 5, // High importance for heads-up visible banner display
+          visibility: 1, // Public lockscreen visibility
+          vibration: true,
+          lights: true,
+          lightColor: '#10B981'
+        });
+      } catch (e) {
+        console.warn('[Notification Service] Channel creation warning:', e);
+      }
+
       // Clear any previously scheduled daily notifications
       await clearScheduledNotifications();
 
@@ -75,6 +91,7 @@ export async function scheduleDailyNotifications() {
           title: 'Günün Kelimesi Hazır! ☀️',
           body: 'Yeni gün, yeni bir kelime! Bakalım bugünkü günlük bulmacayı kaçıncı denemede bulacaksın? Hadi hemen oyna! 🧠',
           id: 9000 + i,
+          channelId: 'kelimesavasi_daily_channel',
           schedule: {
             at: targetDate
           },

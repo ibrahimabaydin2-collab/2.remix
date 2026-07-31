@@ -1,4 +1,5 @@
 // Complete rebuild stamp: 2026-07-23 v1.0.2
+import React, { memo } from 'react';
 import { Sun, Moon, BarChart2, Award, Users, RefreshCw, Sliders, Target } from 'lucide-react';
 import { isImageUrl } from '../types';
 
@@ -17,7 +18,7 @@ interface HeaderProps {
   isOnline: boolean;
 }
 
-export default function Header({
+function Header({
   darkMode,
   setDarkMode,
   onOpenStats,
@@ -143,3 +144,5 @@ export default function Header({
     </header>
   );
 }
+
+export default memo(Header);

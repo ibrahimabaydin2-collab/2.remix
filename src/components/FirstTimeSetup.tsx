@@ -28,27 +28,27 @@ export default function FirstTimeSetup({ profile, onComplete, showToast }: First
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const checkMediaPermission = async (type: 'camera' | 'gallery'): Promise<boolean> => {
-    // 1. Capacitor Camera Plugin Check (if running in hybrid / native Capacitor environment)
+    // 1. Capacitor Camera Plugin Request & Check (if running in hybrid / native Capacitor environment)
     if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
       const cameraPlugin = (window as any).Capacitor?.Plugins?.Camera;
-      if (cameraPlugin && typeof cameraPlugin.checkPermissions === 'function') {
+      if (cameraPlugin) {
         try {
-          let status = await cameraPlugin.checkPermissions();
-          if (type === 'camera' && (status?.camera === 'prompt' || status?.camera === 'prompt-with-rationale')) {
-            status = await cameraPlugin.requestPermissions({ permissions: ['camera'] });
-          } else if (type === 'gallery' && (status?.photos === 'prompt' || status?.photos === 'prompt-with-rationale')) {
-            status = await cameraPlugin.requestPermissions({ permissions: ['photos'] });
-          }
-          
-          const isDenied = type === 'camera' 
-            ? status?.camera === 'denied' 
-            : status?.photos === 'denied';
+          let status = typeof cameraPlugin.checkPermissions === 'function' ? await cameraPlugin.checkPermissions() : null;
+          const currentPerm = type === 'camera' ? status?.camera : status?.photos;
 
-          if (isDenied) {
-            return false;
+          // If not explicitly granted, request native permission to open OS permission prompt
+          if (currentPerm !== 'granted' && typeof cameraPlugin.requestPermissions === 'function') {
+            const reqPerms = type === 'camera' ? ['camera'] : ['photos'];
+            status = await cameraPlugin.requestPermissions({ permissions: reqPerms });
           }
+
+          const finalPerm = type === 'camera' ? status?.camera : status?.photos;
+          if (finalPerm === 'denied') {
+            return false; // User manually tapped Deny on the permission prompt
+          }
+          return true;
         } catch (err) {
-          console.warn('Capacitor camera permission check warning:', err);
+          console.warn('Capacitor camera permission request warning:', err);
         }
       }
     }
@@ -57,23 +57,28 @@ export default function FirstTimeSetup({ profile, onComplete, showToast }: First
     if (typeof navigator !== 'undefined' && navigator.permissions && typeof (navigator.permissions as any).query === 'function') {
       try {
         const permName = type === 'camera' ? 'camera' : 'photos';
-        const res = await (navigator.permissions as any).query({ name: permName });
+        const res = await (navigator.permissions as any).query({ name: permName as any });
         if (res.state === 'denied') {
-          return false;
+          return false; // User manually blocked camera/photos in browser settings
         }
       } catch (e) {
-        // Permission query descriptor for camera/photos might not be supported on all desktop/mobile browsers
+        // Permission query descriptor for camera/photos might not be supported on all browsers
       }
     }
 
-    // 3. Web getUserMedia test for camera
+    // 3. Web getUserMedia camera permission prompt trigger
     if (type === 'camera' && typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         stream.getTracks().forEach(track => track.stop());
+        return true;
       } catch (camErr: any) {
-        console.warn('Camera permission denied or error:', camErr);
-        return false;
+        console.warn('Camera getUserMedia result:', camErr);
+        // Only return false if user explicitly clicked Block / Deny on the native prompt
+        if (camErr?.name === 'NotAllowedError' || camErr?.name === 'PermissionDeniedError') {
+          return false;
+        }
+        // For other non-permission errors, proceed to open camera input element
       }
     }
 
