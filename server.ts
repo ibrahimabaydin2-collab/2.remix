@@ -1694,7 +1694,7 @@ async function startServer() {
         } else if (data.type === 'ping') {
           sendWs(ws, { type: 'pong' });
         } else if (data.type === 'subscribe_channel' || data.type === 'switch_channel') {
-          const length = Number(data.wordLength) || 5;
+          const length = (data.wordLength && Number(data.wordLength) >= 3 && Number(data.wordLength) <= 8) ? Number(data.wordLength) : getRandomMatchLength();
           const existingClient = connectedClients.get(ws);
           const playerId = data.id || data.userId || data.playerId || data.uid || existingClient?.id || 'p_' + Date.now();
           const playerName = data.name || data.username || data.displayName || existingClient?.name || 'Oyuncu';

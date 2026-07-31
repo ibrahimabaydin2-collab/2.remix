@@ -2624,7 +2624,7 @@ export default function App() {
   };
 
   // Start a new solo game
-  const startNewGame = async (length: number = wordLength, isDaily: boolean = isDailyPuzzle) => {
+  const startNewGame = async (length?: number, isDaily: boolean = isDailyPuzzle) => {
     if (activeMatch) {
       console.log('startNewGame skipped because activeMatch is active');
       return;
@@ -2637,7 +2637,10 @@ export default function App() {
       }
     }
     setIsValidating(true);
-    softResetGame(length, isDaily);
+    const targetLength = isDaily
+      ? getDailyWordAndLength().length
+      : (length && Number(length) >= 3 && Number(length) <= 8 ? Number(length) : getClientRandomMatchLength());
+    softResetGame(targetLength, isDaily);
     setIsValidating(false);
   };
 
@@ -2909,7 +2912,7 @@ export default function App() {
       const base = prev || {
         id: currentMatchId || 'match_ended',
         matchId: currentMatchId || 'match_ended',
-        wordLength: matchData?.wordLength || 5,
+        wordLength: matchData?.wordLength || wordLength || getClientRandomMatchLength(),
         targetWord: matchData?.correctWord || matchData?.targetWord || '',
         correctWord: matchData?.correctWord || matchData?.targetWord || '',
         players: {
@@ -3093,7 +3096,7 @@ export default function App() {
               id: challengeId,
               challengeId,
               challengerName: payload.challengerName || 'Bir Arkadaşın',
-              wordLength: Number(payload.wordLength) || 5
+              wordLength: Number(payload.wordLength) || getClientRandomMatchLength()
             }];
           });
           playEnterSound(settings.soundEnabled);
@@ -3198,7 +3201,7 @@ export default function App() {
           }
 
           const matchId = data.matchId;
-          const defaultLen = Number(data.wordLength || 5);
+          const defaultLen = Number(data.wordLength || getClientRandomMatchLength());
 
           let matchPayload = data.matchPayload;
           if (!matchPayload) {
@@ -3482,7 +3485,7 @@ export default function App() {
           matchId: snapshotMatchId,
           targetWord: data.targetWord || data.correctWord || '',
           correctWord: data.targetWord || data.correctWord || '',
-          wordLength: data.wordLength || 5,
+          wordLength: data.wordLength || getClientRandomMatchLength(),
           gameState: data.gameState || 'PLAYING',
           status: data.status || 'playing'
         };
@@ -6810,13 +6813,13 @@ export default function App() {
                             challengerId: opponentPlayer.id,
                             challengerName: opponentPlayer.name || 'Rakip',
                             challengerAvatar: opponentPlayer.avatarUrl || '',
-                            wordLength: activeMatch.wordLength || wordLength || 5
+                            wordLength: getClientRandomMatchLength()
                           });
                           return;
                         }
 
                         setRematchRequested(true);
-                        const targetLength = activeMatch.wordLength || wordLength || 5;
+                        const targetLength = getClientRandomMatchLength();
                         await handleChallengePlayer(opponentPlayer, targetLength);
                       }}
                       disabled={rematchRequested}
