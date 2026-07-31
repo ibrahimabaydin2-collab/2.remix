@@ -1,7 +1,7 @@
 // Complete rebuild stamp for GitHub Actions: 2026-07-23 v1.0.2
 import { BACKUP_TOKEN } from './tokenBackup';
 import { Capacitor, CapacitorCookies } from '@capacitor/core';
-import { turkishLower } from './turkish';
+import { turkishLower, capitalizeFirstLetterTurkish } from './turkish';
 import { COMMON_TURKISH_WORDS } from '../data/wordlist';
 
 const DEPLOYED_APP_URL = "https://kelime-sava.onrender.com";
@@ -353,9 +353,10 @@ export function getWsUrl(): string {
 
 export async function validateWordClientSide(word: string, length: number): Promise<{ valid: boolean; definition: string }> {
   try {
-    // 1. Kelimeyi Türkçe küçük harfe çevir.
+    // 1. Kelimeyi Türkçe küçük harfe ve ilk harfi Türkçe kurallarına uygun büyük harfe çevir (örn: 'insan' -> 'İnsan', 'ışık' -> 'Işık')
     const lowerWord = turkishLower(word).trim();
-    console.log(`[Kelime Doğrulama] İşleniyor: "${word}" -> Türkçe küçük harf: "${lowerWord}"`);
+    const capitalizedWord = capitalizeFirstLetterTurkish(word);
+    console.log(`[Kelime Doğrulama] İşleniyor: "${word}" -> Alt: "${lowerWord}", Baş Harf Büyük: "${capitalizedWord}"`);
 
     // 2. Önce projedeki yerel kelime listesinden kontrol et.
     const localList = COMMON_TURKISH_WORDS[length] || [];
@@ -369,61 +370,63 @@ export async function validateWordClientSide(word: string, length: number): Prom
       };
     }
 
-    // 3. Yerel listede yoksa, doğrudan tarayıcı üzerinden Wikisözlük adresine istek at
-    console.log(`[Kelime Doğrulama] "${lowerWord}" yerel listede yok, Wikisözlük aranıyor...`);
-    const url = `https://tr.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&origin=*&titles=${encodeURIComponent(lowerWord)}`;
-    
-    const response = await fetch(url);
+    // 3. Türkçe Vikipedi API sorgusu (tr.wikipedia.org)
+    // action=query&titles=... API uç noktası ile dönen 'pages' objesinde id '-1' olmadığını kontrol et
+    console.log(`[Kelime Doğrulama] "${capitalizedWord}" / "${lowerWord}" Vikipedi'de aranıyor...`);
+    const wikiUrl = `https://tr.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&titles=${encodeURIComponent(capitalizedWord)}|${encodeURIComponent(lowerWord)}`;
+
+    try {
+      const wikiResponse = await fetch(wikiUrl);
+      if (wikiResponse.ok) {
+        const wikiData = await wikiResponse.json();
+        const pages = wikiData?.query?.pages || {};
+        const validWikiPage = Object.values(pages).find((p: any) => {
+          return p && String(p.pageid || '') !== '-1' && p.pageid > 0 && p.missing === undefined && p.ns === 0;
+        });
+
+        if (validWikiPage) {
+          const pageTitle = (validWikiPage as any).title || capitalizedWord;
+          console.log(`[Kelime Doğrulama] "${lowerWord}" ("${pageTitle}") Vikipedi'de doğrulandı!`);
+          return {
+            valid: true,
+            definition: `${pageTitle} kelimesi Türkçe Vikipedi'de doğrulandı.`
+          };
+        }
+      }
+    } catch (wikiErr) {
+      console.warn('[Kelime Doğrulama] Vikipedi isteği başarısız oldu:', wikiErr);
+    }
+
+    // 4. Türkçe Wikisözlük API sorgusu (tr.wiktionary.org) - İkinci Doğrulama Katmanı
+    console.log(`[Kelime Doğrulama] "${lowerWord}" Wikisözlük'te aranıyor...`);
+    const wiktionaryUrl = `https://tr.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&origin=*&redirects=1&titles=${encodeURIComponent(lowerWord)}|${encodeURIComponent(capitalizedWord)}`;
+
+    const response = await fetch(wiktionaryUrl);
     if (!response.ok) {
       throw new Error(`Wikisözlük sunucu yanıt hatası (HTTP ${response.status})`);
     }
 
     const data = await response.json();
-    const pages = data?.query?.pages;
-    if (!pages) {
-      console.warn('[Kelime Doğrulama] Wikisözlük yanıtı boş.');
-      return { valid: false, definition: 'Arama sonuçsuz kaldı.' };
-    }
+    const pages = data?.query?.pages || {};
+    const validWiktionaryPage = Object.values(pages).find((p: any) => {
+      if (!p || String(p.pageid || '') === '-1' || p.missing !== undefined) return false;
+      if (!p.revisions || !Array.isArray(p.revisions) || p.revisions.length === 0) return false;
+      const content = p.revisions[0]['*'] || '';
+      return /==\s*Türkçe\s*==/i.test(content) || content.includes('{{dil|tr}}') || content.includes('==Türkçe==');
+    });
 
-    const pageId = Object.keys(pages)[0];
-    if (pageId === '-1') {
-      console.log(`[Kelime Doğrulama] "${lowerWord}" Wikisözlük'te bulunamadı.`);
-      return { valid: false, definition: 'Kelime Wikisözlük\'te bulunamadı.' };
-    }
-
-    const page = pages[pageId];
-    const content = page?.revisions?.[0]?.['*'] || '';
-
-    // Gelen içerikte Türkçe başlığı geçiyorsa kelimeyi geçerli say, geçmiyorsa geçersiz say
-    const hasTurkishHeading = /==\s*Türkçe\s*==/i.test(content) || content.includes('{{dil|tr}}') || content.includes('==Türkçe==');
-
-    if (hasTurkishHeading) {
-      console.log(`[Kelime Doğrulama] "${lowerWord}" Wikisözlük'te doğrulandı (Türkçe başlığı bulundu).`);
-      
-      // Detaylı tanım çıkarma denemesi
-      let def = `${word.toUpperCase()} kelimesi Wikisözlük'te doğrulandı.`;
-      const trIndex = content.indexOf('== Türkçe ==') !== -1 ? content.indexOf('== Türkçe ==') : content.indexOf('==Türkçe==');
-      if (trIndex !== -1) {
-        const turkishSection = content.substring(trIndex);
-        const lines = turkishSection.split('\n');
-        const firstDefLine = lines.find(line => line.startsWith('#') && !line.startsWith('#*') && !line.startsWith('#:'));
-        if (firstDefLine) {
-          const cleanDef = firstDefLine.replace(/#/g, '').replace(/\[\[/g, '').replace(/\]\]/g, '').replace(/\{\{[^}]*\}\}/g, '').trim();
-          if (cleanDef) {
-            def = cleanDef;
-          }
-        }
-      }
+    if (validWiktionaryPage) {
+      console.log(`[Kelime Doğrulama] "${lowerWord}" Wikisözlük'te doğrulandı.`);
       return {
         valid: true,
-        definition: def
+        definition: `${word.toUpperCase()} kelimesi Wikisözlük'te doğrulandı.`
       };
     }
 
-    console.log(`[Kelime Doğrulama] "${lowerWord}" Wikisözlük'te var fakat Türkçe dil başlığı bulunamadı.`);
+    console.log(`[Kelime Doğrulama] "${lowerWord}" Vikipedi veya Wikisözlük'te bulunamadı.`);
     return {
       valid: false,
-      definition: 'Kelime Türkçe sözlük yapısında bulunamadı (Farklı dilde olabilir).'
+      definition: 'Kelime Türkçe Vikipedi veya Wikisözlük veritabanında bulunamadı.'
     };
   } catch (error: any) {
     console.error('[Kelime Doğrulama Hatası]:', error);

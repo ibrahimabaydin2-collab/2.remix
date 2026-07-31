@@ -17,13 +17,46 @@ import { WORDS_8 } from './libraries/words8';
 
 import { EASY_WORDS_LEVEL_1 } from './libraries/easy1';
 
+export const words_3: string[] = Array.from(new Set([...(populerKelimeler[3] || []), ...POPULAR_3, ...WORDS_3]))
+  .map(w => turkishUpper(w.trim()))
+  .filter(w => w.length === 3);
+
+export const words_4: string[] = Array.from(new Set([...(populerKelimeler[4] || []), ...POPULAR_4, ...WORDS_4]))
+  .map(w => turkishUpper(w.trim()))
+  .filter(w => w.length === 4);
+
+export const words_5: string[] = Array.from(new Set([...(populerKelimeler[5] || []), ...POPULAR_5, ...WORDS_5]))
+  .map(w => turkishUpper(w.trim()))
+  .filter(w => w.length === 5);
+
+export const words_6: string[] = Array.from(new Set([...(populerKelimeler[6] || []), ...POPULAR_6, ...WORDS_6]))
+  .map(w => turkishUpper(w.trim()))
+  .filter(w => w.length === 6);
+
+export const words_7: string[] = Array.from(new Set([...(populerKelimeler[7] || []), ...POPULAR_7, ...WORDS_7]))
+  .map(w => turkishUpper(w.trim()))
+  .filter(w => w.length === 7);
+
+export const words_8: string[] = Array.from(new Set([...(populerKelimeler[8] || []), ...POPULAR_8, ...WORDS_8]))
+  .map(w => turkishUpper(w.trim()))
+  .filter(w => w.length === 8);
+
+export const LIVE_MODE_WORD_POOLS: { [key: number]: string[] } = {
+  3: words_3,
+  4: words_4,
+  5: words_5,
+  6: words_6,
+  7: words_7,
+  8: words_8
+};
+
 export const COMMON_TURKISH_WORDS: { [key: number]: string[] } = {
-  3: [...POPULAR_3],
-  4: [...POPULAR_4],
-  5: [...POPULAR_5],
-  6: [...POPULAR_6],
-  7: [...POPULAR_7],
-  8: [...POPULAR_8],
+  3: words_3,
+  4: words_4,
+  5: words_5,
+  6: words_6,
+  7: words_7,
+  8: words_8,
 };
 
 export const CLEANED_TURKISH_WORDS: { [key: number]: string[] } = {
@@ -64,7 +97,7 @@ export function getRandomWord(length?: number, isLevel1?: boolean): string {
     }
   }
 
-  const words = populerKelimeler[targetLength] || COMMON_TURKISH_WORDS[targetLength] || [];
+  const words = LIVE_MODE_WORD_POOLS[targetLength] || populerKelimeler[targetLength] || COMMON_TURKISH_WORDS[targetLength] || [];
   const filteredWords = words.filter(word => word.trim().length === targetLength);
 
   if (!filteredWords || filteredWords.length === 0) {
@@ -81,6 +114,15 @@ export function getRandomWord(length?: number, isLevel1?: boolean): string {
   }
 
   return upper;
+}
+
+export function getRandomLiveWord(length?: number): { word: string; length: number } {
+  const targetLength = (length && Number(length) >= 3 && Number(length) <= 8)
+    ? Number(length)
+    : (Math.floor(Math.random() * 6) + 3);
+
+  const word = getRandomWord(targetLength);
+  return { word, length: targetLength };
 }
 
 export function isWordInCuratedList(word: string, length: number): boolean {

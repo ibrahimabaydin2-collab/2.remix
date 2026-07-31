@@ -9,8 +9,8 @@ import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket } from 'ws';
 import { doc, getDoc, setDoc, deleteDoc, runTransaction } from 'firebase/firestore';
 import { db } from './src/lib/firebase';
-import { getRandomWord, isWordInCuratedList, getDailyWordAndLength } from './src/data/wordlist';
-import { turkishUpper, turkishLower } from './src/utils/turkish';
+import { getRandomWord, getRandomLiveWord, isWordInCuratedList, getDailyWordAndLength, words_3, words_4, words_5, words_6, words_7, words_8, LIVE_MODE_WORD_POOLS } from './src/data/wordlist';
+import { turkishUpper, turkishLower, capitalizeFirstLetterTurkish } from './src/utils/turkish';
 import axios from 'axios';
 
 dotenv.config();
@@ -228,12 +228,25 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Endpoint to generate a target word
+// Endpoint to generate a target word across multi-list pools (words_3..words_8)
 app.post('/api/random-word', (req, res) => {
-  const { length } = req.body;
-  const wordLength = (length && Number(length) >= 3 && Number(length) <= 8) ? Number(length) : (Math.floor(Math.random() * 6) + 3);
+  const { length } = req.body || {};
+  const wordLength = (length && Number(length) >= 3 && Number(length) <= 8) ? Number(length) : getRandomMatchLength();
   const word = getRandomWord(wordLength);
-  res.json({ word });
+  res.json({ word, length: wordLength });
+});
+
+// Endpoint to inspect live mode multi-list word pool counts
+app.get('/api/live-word-pools', (req, res) => {
+  res.json({
+    words_3: words_3.length,
+    words_4: words_4.length,
+    words_5: words_5.length,
+    words_6: words_6.length,
+    words_7: words_7.length,
+    words_8: words_8.length,
+    total: words_3.length + words_4.length + words_5.length + words_6.length + words_7.length + words_8.length
+  });
 });
 
 // GET Daily Puzzle Status
@@ -330,9 +343,10 @@ app.post('/api/daily-puzzle', async (req, res) => {
 // Core hybrid validation function
 async function validateWordHybrid(word: string, skipLocalCheck = false): Promise<{ valid: boolean; definition: string }> {
   try {
-    // 1. Türkçe kurallarına göre küçük harfe çevir
-    const lowerWord = word.trim().toLocaleLowerCase('tr-TR');
-    console.log(`[Hybrid Validation] Validating word: "${word}" (normalized lower: "${lowerWord}")`);
+    // 1. Türkçe kurallarına göre küçük ve ilk harfi büyük hallerini oluştur (örn. 'insan' -> 'İnsan', 'ışık' -> 'Işık')
+    const lowerWord = turkishLower(word).trim();
+    const capitalizedWord = capitalizeFirstLetterTurkish(word);
+    console.log(`[Hybrid Validation] Validating word: "${word}" (lower: "${lowerWord}", capitalized: "${capitalizedWord}")`);
 
     // 2. İlk olarak bu kelimeyi bizim yerel kelime listemizde ara. Eğer yerel listede varsa doğrudan geçerli say ve internete hiç sorma.
     if (!skipLocalCheck) {
@@ -346,74 +360,75 @@ async function validateWordHybrid(word: string, skipLocalCheck = false): Promise
       }
     }
 
-    // 3. Eğer yerel listede yoksa, doğrudan Axios kullanarak Wikisözlük API'sine sorgu gönder.
-    // Sorgu adresi: https://tr.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles=kelime
-    const url = `https://tr.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles=${encodeURIComponent(lowerWord)}`;
-    
-    console.log(`[Wiktionary Query] Sending request for: "${lowerWord}"`);
-    const response = await axios.get(url, {
+    // 3. Türkçe Vikipedi API Sorgusu (tr.wikipedia.org)
+    // action=query&titles=... uç noktası üzerinden 'pages' objesinde '-1' ID'si olmadığını ve geçerli sayfa varlığını kontrol et
+    const wikiUrl = `https://tr.wikipedia.org/w/api.php?action=query&format=json&redirects=1&titles=${encodeURIComponent(capitalizedWord)}|${encodeURIComponent(lowerWord)}`;
+    console.log(`[Wikipedia Query] Requesting: "${capitalizedWord}" / "${lowerWord}"`);
+
+    try {
+      const wikiRes = await axios.get(wikiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        timeout: 4000
+      });
+
+      const wikiData = wikiRes.data;
+      if (wikiData && wikiData.query && wikiData.query.pages) {
+        const pages = wikiData.query.pages;
+        // Dönen 'pages' objesinde id'-1' (missing) olmayan, ns:0 (ana alan) geçerli bir sayfa var mı?
+        const validWikiPage = Object.values(pages).find((p: any) => {
+          return p && String(p.pageid || '') !== '-1' && p.pageid > 0 && p.missing === undefined && p.ns === 0;
+        });
+
+        if (validWikiPage) {
+          const matchedTitle = (validWikiPage as any).title || capitalizedWord;
+          console.log(`[Wikipedia Result] Word "${lowerWord}" ("${matchedTitle}") is VALID on Wikipedia! Page ID: ${(validWikiPage as any).pageid}`);
+          return {
+            valid: true,
+            definition: 'Türkçe Vikipedi\'de kayıtlı geçerli bir sözcük/kavramdır.'
+          };
+        }
+      }
+    } catch (wikiErr: any) {
+      console.warn(`[Wikipedia Query Warning] Failed for "${word}":`, wikiErr?.message || wikiErr);
+    }
+
+    // 4. Türkçe Wikisözlük API Sorgusu (tr.wiktionary.org) - İkinci Doğrulama Katmanı
+    const wiktionaryUrl = `https://tr.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&redirects=1&titles=${encodeURIComponent(lowerWord)}|${encodeURIComponent(capitalizedWord)}`;
+    console.log(`[Wiktionary Query] Requesting: "${lowerWord}" / "${capitalizedWord}"`);
+
+    const response = await axios.get(wiktionaryUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      timeout: 5000
+      timeout: 4000
     });
 
     const data = response.data;
-    if (!data || !data.query || !data.query.pages) {
-      console.log(`[Wiktionary Result] Word "${lowerWord}" is INVALID (No query or pages found in response)`);
-      return {
-        valid: false,
-        definition: 'Kelime Wikisözlük\'te bulunamadı.'
-      };
+    if (data && data.query && data.query.pages) {
+      const pages = data.query.pages;
+      const validWiktionaryPage = Object.values(pages).find((p: any) => {
+        if (!p || String(p.pageid || '') === '-1' || p.missing !== undefined) return false;
+        if (!p.revisions || !Array.isArray(p.revisions) || p.revisions.length === 0) return false;
+        const content = p.revisions[0]['*'] || '';
+        return content.includes('dil|tr') || content.includes('Türkçe') || /==\s*Türkçe\s*==/.test(content);
+      });
+
+      if (validWiktionaryPage) {
+        console.log(`[Wiktionary Result] Word "${lowerWord}" is VALID on Wiktionary!`);
+        return {
+          valid: true,
+          definition: 'Wikisözlük\'te kayıtlı geçerli bir Türkçe sözcüktür.'
+        };
+      }
     }
 
-    const pages = data.query.pages;
-    const pageKeys = Object.keys(pages);
-    if (pageKeys.length === 0 || pageKeys[0] === '-1') {
-      console.log(`[Wiktionary Result] Word "${lowerWord}" is INVALID (Page not found / missing)`);
-      return {
-        valid: false,
-        definition: 'Kelime Wikisözlük\'te bulunamadı.'
-      };
-    }
-
-    const page = pages[pageKeys[0]];
-    if (page.missing !== undefined) {
-      console.log(`[Wiktionary Result] Word "${lowerWord}" is INVALID (Page has missing property)`);
-      return {
-        valid: false,
-        definition: 'Kelime Wikisözlük\'te bulunamadı.'
-      };
-    }
-
-    if (!page.revisions || !Array.isArray(page.revisions) || page.revisions.length === 0) {
-      console.log(`[Wiktionary Result] Word "${lowerWord}" is INVALID (No revisions found)`);
-      return {
-        valid: false,
-        definition: 'Kelime Wikisözlük\'te bulunamadı.'
-      };
-    }
-
-    const content = page.revisions[0]['*'] || '';
-    
-    // Check if Turkish header or template exists in the content:
-    // "Gelen içerik içinde dil|tr veya Türkçe kelimeleri geçiyorsa kelimeyi doğrudan geçerli say."
-    const hasTurkishHeader = content.includes('dil|tr') || content.includes('Türkçe') || /==\s*Türkçe\s*==/.test(content);
-    
-    if (hasTurkishHeader) {
-      console.log(`[Wiktionary Result] Word "${lowerWord}" is VALID (Found Turkish section)`);
-      
-      return {
-        valid: true,
-        definition: 'Wikisözlük\'te kayıtlı geçerli bir Türkçe sözcüktür.'
-      };
-    } else {
-      console.log(`[Wiktionary Result] Word "${lowerWord}" is INVALID (No Turkish section found in contents)`);
-      return {
-        valid: false,
-        definition: 'Kelime Wikisözlük\'te mevcut fakat Türkçe dilinde değil.'
-      };
-    }
+    console.log(`[Validation Result] Word "${lowerWord}" is INVALID (Not found on Wikipedia or Wiktionary)`);
+    return {
+      valid: false,
+      definition: 'Kelime Türkçe Vikipedi veya Wikisözlük\'te bulunamadı.'
+    };
 
   } catch (err: any) {
     console.error(`[Hybrid Validation Error] Failed for "${word}":`, err?.message || err);

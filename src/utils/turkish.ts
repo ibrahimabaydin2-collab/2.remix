@@ -42,6 +42,22 @@ export function turkishLower(str: string): string {
     .join('');
 }
 
+export function capitalizeFirstLetterTurkish(word: string): string {
+  if (!word) return '';
+  const trimmed = turkishLower(word).trim();
+  if (!trimmed) return '';
+  let firstChar = trimmed.charAt(0);
+  if (firstChar === 'i') firstChar = 'İ';
+  else if (firstChar === 'ı') firstChar = 'I';
+  else if (firstChar === 'ç') firstChar = 'Ç';
+  else if (firstChar === 'ğ') firstChar = 'Ğ';
+  else if (firstChar === 'ö') firstChar = 'Ö';
+  else if (firstChar === 'ş') firstChar = 'Ş';
+  else if (firstChar === 'ü') firstChar = 'Ü';
+  else firstChar = firstChar.toUpperCase();
+  return firstChar + trimmed.slice(1);
+}
+
 export function validateTurkishLinguistics(word: string, length: number): { valid: boolean; reason: string } {
   const normalized = turkishLower(word)
     .replace(/â/g, 'a')
