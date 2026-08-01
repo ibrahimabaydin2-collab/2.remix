@@ -2,6 +2,7 @@
 import React, { memo } from 'react';
 import { Sun, Moon, BarChart2, Award, Users, RefreshCw, Sliders, Target } from 'lucide-react';
 import { isImageUrl } from '../types';
+import UserAvatar from './UserAvatar';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -67,19 +68,9 @@ function Header({
             onClick={onEditName}
             className="flex items-center gap-2 text-xs bg-[#3D4756] hover:bg-[#3D4756]/80 text-[#FAF6E9] pl-2 pr-3 py-1 rounded-xl border border-[#3E485A] transition duration-150 font-medium max-w-[150px]"
           >
-            {avatarUrl ? (
-              <span className="w-6 h-6 rounded-full overflow-hidden border border-emerald-500 flex items-center justify-center bg-[#2E3748] font-bold shrink-0">
-                {isImageUrl(avatarUrl) ? (
-                  <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  <span className="text-sm leading-none">{avatarUrl}</span>
-                )}
-              </span>
-            ) : (
-              <span className="w-6 h-6 rounded-full bg-emerald-500 text-white font-bold flex items-center justify-center shrink-0">
-                {playerName ? playerName.charAt(0).toUpperCase() : 'O'}
-              </span>
-            )}
+            <span className="w-6 h-6 rounded-full overflow-hidden border border-emerald-500 flex items-center justify-center bg-[#2E3748] font-bold shrink-0">
+              <UserAvatar avatarUrl={avatarUrl} name={playerName} fallbackIcon="🧠" textClassName="text-xs font-bold text-emerald-300" />
+            </span>
             <span className="truncate">{playerName || 'Oyuncu'}</span>
           </button>
 

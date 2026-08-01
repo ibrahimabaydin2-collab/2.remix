@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { getDeckRandomLength } from '../data/wordlist';
 import { UserProfile, FriendRequest, isImageUrl } from '../types';
+import UserAvatar from './UserAvatar';
 import { 
   sendFriendRequestInFirestore, 
   acceptFriendRequestInFirestore, 
@@ -94,13 +95,14 @@ export default function FriendsModal({
   }, [profile?.friends]);
 
   // Load and synchronize friends & requests from Firestore
-  const refreshFriends = useCallback(async (isSilent = false) => {
-    if (!profile?.id) return;
+  const refreshFriends = useCallback(async (isSilent = false, overrideProfile?: UserProfile) => {
+    const activeProfile = overrideProfile || profile;
+    if (!activeProfile?.id) return;
     if (!isSilent && confirmedFriends.length === 0) setLoading(true);
     setRefreshing(true);
 
     try {
-      const data = await fetchFriendRequestsAndSync(profile);
+      const data = await fetchFriendRequestsAndSync(activeProfile);
       setConfirmedFriends(data.confirmedFriends || []);
       setIncomingRequests(data.incomingRequests || []);
 
@@ -120,7 +122,7 @@ export default function FriendsModal({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [profile?.id, confirmedFriends.length]);
+  }, [profile, confirmedFriends.length]);
 
   useEffect(() => {
     refreshFriends(false);
@@ -199,20 +201,38 @@ export default function FriendsModal({
     }
 
     setPendingActionId(friendUser.id);
+    const previousFriends = [...confirmedFriends];
 
     try {
+      // 1. Remove relationship in Firestore
       await removeFriendInFirestore(profile.id, friendUser.id);
       
-      // Optimistic update local state
+      // 2. Instant optimistic UI state update
       const updatedList = confirmedFriends.filter(f => f.id !== friendUser.id);
       setConfirmedFriends(updatedList);
-      onUpdateFriends(updatedList.map(f => f.id));
+      
+      const newFriendIds = updatedList.map(f => f.id);
+      onUpdateFriends(newFriendIds);
 
-      if (showToast) showToast(`${friendUser.name || 'Oyuncu'} arkadaş listenden çıkarıldı.`, 'info');
-      await refreshFriends(true);
+      // 3. User feedback
+      if (showToast) {
+        showToast(`${friendUser.name || 'Oyuncu'} arkadaş listenden çıkarıldı.`, 'info');
+      }
+
+      // 4. Background re-sync using updated profile object
+      const updatedProfile: UserProfile = {
+        ...profile,
+        friends: newFriendIds
+      };
+      await refreshFriends(true, updatedProfile);
     } catch (err) {
-      console.warn('Failed to remove friend:', err);
-      if (showToast) showToast('Arkadaş silinirken hata oluştu.', 'error');
+      console.error('Failed to remove friend:', err);
+      // Rollback UI state on error
+      setConfirmedFriends(previousFriends);
+      onUpdateFriends(previousFriends.map(f => f.id));
+      if (showToast) {
+        showToast('Arkadaş silinirken bir hata oluştu.', 'error');
+      }
     } finally {
       setPendingActionId(null);
     }
@@ -337,16 +357,8 @@ export default function FriendsModal({
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {/* Avatar with status indicator */}
-                          <div className="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-sm border border-slate-700 shrink-0 relative">
-                            {friend.avatarUrl ? (
-                              isImageUrl(friend.avatarUrl) ? (
-                                <img src={friend.avatarUrl} alt="avatar" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />
-                              ) : (
-                                <span className="text-base select-none">{friend.avatarUrl}</span>
-                              )
-                            ) : (
-                              <span className="text-slate-300">{friend.name ? friend.name.charAt(0).toUpperCase() : '?'}</span>
-                            )}
+                          <div className="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-sm border border-slate-700 shrink-0 relative overflow-hidden">
+                            <UserAvatar avatarUrl={friend.avatarUrl} name={friend.name} fallbackIcon="?" textClassName="text-sm font-bold text-slate-300" />
                             <span
                               className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#161D2B] ${
                                 online ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse' : 'bg-slate-600'
@@ -403,7 +415,11 @@ export default function FriendsModal({
                             className="p-2 rounded-xl text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 border border-transparent hover:border-rose-500/30 transition cursor-pointer disabled:opacity-50"
                             title="Arkadaş Çıkar"
                           >
-                            <UserMinus size={15} />
+                            {pendingActionId === friend.id ? (
+                              <RefreshCw size={15} className="animate-spin text-rose-400" />
+                            ) : (
+                              <UserMinus size={15} />
+                            )}
                           </button>
                         </div>
                       </div>
@@ -472,16 +488,8 @@ export default function FriendsModal({
                         className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 flex items-center justify-between text-left"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-9 h-9 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-xs border border-slate-700 shrink-0">
-                            {user.avatarUrl ? (
-                              isImageUrl(user.avatarUrl) ? (
-                                <img src={user.avatarUrl} alt="avatar" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />
-                              ) : (
-                                <span className="text-sm select-none">{user.avatarUrl}</span>
-                              )
-                            ) : (
-                              <span className="text-slate-300">{user.name ? user.name.charAt(0).toUpperCase() : '?'}</span>
-                            )}
+                          <div className="w-9 h-9 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-xs border border-slate-700 shrink-0 overflow-hidden">
+                            <UserAvatar avatarUrl={user.avatarUrl} name={user.name} fallbackIcon="?" textClassName="text-xs font-bold text-slate-300" />
                           </div>
                           <div className="min-w-0">
                             <span className="text-xs font-black text-white block truncate">{user.name || 'Oyuncu'}</span>
@@ -535,16 +543,8 @@ export default function FriendsModal({
                       className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 flex items-center justify-between text-left"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-xs border border-slate-700 shrink-0">
-                          {reqUser.avatarUrl ? (
-                            isImageUrl(reqUser.avatarUrl) ? (
-                              <img src={reqUser.avatarUrl} alt="avatar" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />
-                            ) : (
-                              <span className="text-sm select-none">{reqUser.avatarUrl}</span>
-                            )
-                          ) : (
-                            <span className="text-slate-300">{reqUser.name ? reqUser.name.charAt(0).toUpperCase() : '?'}</span>
-                          )}
+                        <div className="w-9 h-9 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-xs border border-slate-700 shrink-0 overflow-hidden">
+                          <UserAvatar avatarUrl={reqUser.avatarUrl} name={reqUser.name} fallbackIcon="?" textClassName="text-xs font-bold text-slate-300" />
                         </div>
                         <div className="min-w-0">
                           <span className="text-xs font-black text-white block truncate">{reqUser.name}</span>

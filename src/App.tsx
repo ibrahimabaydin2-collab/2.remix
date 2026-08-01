@@ -23,7 +23,7 @@ import FriendsModal from './components/FriendsModal';
 import SettingsModal, { AppSettings } from './components/SettingsModal';
 import AuthScreen from './components/AuthScreen';
 import BadgeUnlockedModal from './components/BadgeUnlockedModal';
-import { auth, onAuthStateChanged, fetchUserProfile, saveUserProfileToFirestore, signOutUser, fetchUserProfileByDeviceId, deleteUserProfile, signInAsGuest, clearMatchmakingState, updateUserPresence, db, createOrMergeProfile, subscribeToUserProfile } from './lib/firebase';
+import { auth, onAuthStateChanged, fetchUserProfile, saveUserProfileToFirestore, signOutUser, fetchUserProfileByDeviceId, deleteUserProfile, signInAsGuest, clearMatchmakingState, updateUserPresence, db, createOrMergeProfile, subscribeToUserProfile, uploadAvatarToStorage, updateUserStatsInFirestore } from './lib/firebase';
 import { doc, setDoc, updateDoc, onSnapshot, runTransaction, getDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { UserProfile, GameAttempt, DailyMission, Badge, NetworkLogEntry, isImageUrl } from './types';
 import { Swords, RotateCcw, AlertCircle, HelpCircle, Trophy, UserCheck, Flame, Hourglass, HelpCircle as HelpIcon, Sparkles, Upload, Trash2, Image, X, ArrowLeft, Info, Play, Home, LogOut, Wifi, WifiOff, Zap, Users, ArrowDownFromLine, Flag } from 'lucide-react';
@@ -36,6 +36,7 @@ import { scheduleDailyNotifications } from './utils/notifications';
 import { ADMOB_CONFIG, syncAdMobWithNativeBridge, triggerRewardedAdWatch } from './utils/admob';
 import AdMobBanner from './components/AdMobBanner';
 import GameTimerDisplay from './components/GameTimerDisplay';
+import UserAvatar from './components/UserAvatar';
 
 const INITIAL_STATS = {
   gamesPlayed: 0,
@@ -264,6 +265,13 @@ const isGenericName = (n?: string) =>
   n.startsWith('Misafir_') ||
   n.startsWith('Savaşçı_');
 
+const cleanPlayerName = (rawName?: string, fallback = 'Oyuncu'): string => {
+  if (!rawName || typeof rawName !== 'string') return fallback;
+  const trimmed = rawName.trim();
+  if (!trimmed || isImageUrl(trimmed) || isGenericName(trimmed)) return fallback;
+  return trimmed;
+};
+
 const getEffectiveSelfName = (
   profile: { name?: string; username?: string; displayName?: string },
   currentAuthUser?: any
@@ -271,16 +279,16 @@ const getEffectiveSelfName = (
   const savedUsername = safeLocalStorage.getItem('saved_username');
   const pName = profile?.name || profile?.username || profile?.displayName || currentAuthUser?.displayName;
 
-  if (pName && !isGenericName(pName)) {
+  if (pName && !isGenericName(pName) && !isImageUrl(pName)) {
     return pName.trim();
   }
-  if (savedUsername && !isGenericName(savedUsername)) {
+  if (savedUsername && !isGenericName(savedUsername) && !isImageUrl(savedUsername)) {
     return savedUsername.trim();
   }
-  if (pName && pName.trim()) {
+  if (pName && pName.trim() && !isImageUrl(pName)) {
     return pName.trim();
   }
-  if (savedUsername && savedUsername.trim()) {
+  if (savedUsername && savedUsername.trim() && !isImageUrl(savedUsername)) {
     return savedUsername.trim();
   }
   return 'Oyuncu';
@@ -319,22 +327,35 @@ const resolveDuelPlayers = (rawP1: any, rawP2: any, profile: { id?: string; name
   let p1Avatar = mergedP1.avatarUrl || mergedP1.avatar || p1.avatarUrl || p1.avatar || '';
   let p2Avatar = mergedP2.avatarUrl || mergedP2.avatar || p2.avatarUrl || p2.avatar || '';
 
+  // Extract avatar from name if name contains an image URL
+  if (p1Name && isImageUrl(p1Name)) {
+    if (!p1Avatar) p1Avatar = p1Name;
+    p1Name = (p1Id && p1Id !== 'p1') ? 'Misafir_' + p1Id.substring(0, 5) : 'Oyuncu';
+  }
+  if (p2Name && isImageUrl(p2Name)) {
+    if (!p2Avatar) p2Avatar = p2Name;
+    p2Name = (p2Id && p2Id !== 'p2') ? 'Misafir_' + p2Id.substring(0, 5) : 'Rakip';
+  }
+
   if (!p1Id) p1Id = 'p1';
   if (!p2Id) p2Id = 'p2';
 
   if (p1Id === selfId || (profile?.id && p1Id === profile.id)) {
     p1Name = selfName;
     if (profile?.avatarUrl) p1Avatar = profile.avatarUrl;
-  } else if (!p1Name || isGenericName(p1Name)) {
-    p1Name = 'Rakip';
+  } else if (!p1Name || isGenericName(p1Name) || isImageUrl(p1Name)) {
+    p1Name = (p1Id && p1Id !== 'p1') ? 'Misafir_' + p1Id.substring(0, 5) : 'Rakip';
   }
 
   if (p2Id === selfId || (profile?.id && p2Id === profile.id)) {
     p2Name = selfName;
     if (profile?.avatarUrl) p2Avatar = profile.avatarUrl;
-  } else if (!p2Name || isGenericName(p2Name)) {
-    p2Name = 'Rakip';
+  } else if (!p2Name || isGenericName(p2Name) || isImageUrl(p2Name)) {
+    p2Name = (p2Id && p2Id !== 'p2') ? 'Misafir_' + p2Id.substring(0, 5) : 'Rakip';
   }
+
+  p1Name = cleanPlayerName(p1Name, 'Oyuncu');
+  p2Name = cleanPlayerName(p2Name, 'Rakip');
 
   const finalP1 = {
     ...mergedP1,
@@ -577,12 +598,12 @@ function MatchStartOverlay({
         {/* Player 1 Card */}
         <div className="flex-1 flex flex-col items-center p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl relative overflow-hidden">
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-300 p-0.5 shadow-lg mb-3">
-            <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-3xl sm:text-4xl">
-              {p1.avatarUrl || '🧠'}
+            <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-3xl sm:text-4xl overflow-hidden">
+              <UserAvatar avatarUrl={p1.avatarUrl} name={p1.name} fallbackIcon="🧠" textClassName="text-2xl sm:text-3xl font-black text-amber-300" />
             </div>
           </div>
           <span className="font-bold text-sm sm:text-base text-white text-center truncate max-w-[110px]">
-            {p1.name || 'Oyuncu 1'}
+            {cleanPlayerName(p1.name, 'Sen')}
           </span>
           <span className="mt-2 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
             HAZIR ✓
@@ -607,12 +628,12 @@ function MatchStartOverlay({
         {/* Player 2 Card */}
         <div className="flex-1 flex flex-col items-center p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl relative overflow-hidden">
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-blue-500 to-cyan-300 p-0.5 shadow-lg mb-3">
-            <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-3xl sm:text-4xl">
-              {p2.avatarUrl || '⚔️'}
+            <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center text-3xl sm:text-4xl overflow-hidden">
+              <UserAvatar avatarUrl={p2.avatarUrl} name={p2.name} fallbackIcon="⚔️" textClassName="text-2xl sm:text-3xl font-black text-cyan-300" />
             </div>
           </div>
           <span className="font-bold text-sm sm:text-base text-white text-center truncate max-w-[110px]">
-            {p2.name || 'Rakip'}
+            {cleanPlayerName(p2.name, 'Rakip')}
           </span>
           <span className="mt-2 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
             HAZIR ✓
@@ -1540,6 +1561,7 @@ export default function App() {
     id: string;
     challengedId: string;
     challengedName: string;
+    challengedAvatar?: string;
     wordLength: number;
     remainingSeconds: number;
     expiresAt: number;
@@ -4525,6 +4547,9 @@ export default function App() {
       wordLengthStats: currentWordLengthStats,
       lastUpdated: new Date().toISOString()
     };
+    if (targetWord) {
+      (updatedProfile as any).solvedWords = [targetWord.trim().toUpperCase()];
+    }
 
     // Update React state cleanly without side effects in the updater function
     setProfile(updatedProfile);
@@ -4648,42 +4673,6 @@ export default function App() {
     if (scoreEl) {
       scoreEl.innerText = `${newScore} Puan`;
     }
-  };
-
-  // Reset User stats
-  const resetStats = () => {
-    showConfirm(
-      'İstatistikleri Sıfırla',
-      'Tüm ilerleme ve istatistiklerinizi sıfırlamak istediğinize emin misiniz? Bu işlem geri alınamaz.',
-      () => {
-        const updatedProfile = {
-          ...profile,
-          stats: INITIAL_STATS,
-          badges: DEFAULT_BADGES,
-          missions: DEFAULT_MISSIONS,
-          dailyScore: 0,
-          wordLengthStats: {
-            "3": 0,
-            "4": 0,
-            "5": 0,
-            "6": 0,
-            "7": 0,
-            "8": 0
-          },
-          lastUpdated: new Date().toISOString()
-        };
-        setProfile(updatedProfile);
-        saveUserProfileToFirestore(updatedProfile).catch((err) => {
-          console.warn("Non-blocking profile save during stats reset failed:", err);
-        });
-
-        const scoreEl = document.getElementById('score');
-        if (scoreEl) {
-          scoreEl.innerText = '0 Puan';
-        }
-        showToast('Tüm istatistikler sıfırlandı.', 'info');
-      }
-    );
   };
 
   // Handle Character keys typed on physical or virtual keyboard
@@ -5008,7 +4997,8 @@ export default function App() {
       setPendingSentChallenge({
         id: challengeId,
         challengedId: player.id,
-        challengedName: player.name || 'Oyuncu',
+        challengedName: cleanPlayerName(player.name, 'Oyuncu'),
+        challengedAvatar: player.avatarUrl || (isImageUrl(player.name) ? player.name : ''),
         wordLength: length,
         remainingSeconds: 10,
         expiresAt
@@ -6276,15 +6266,7 @@ export default function App() {
                     <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-500" />
                     <div className="flex items-center gap-2 min-w-0 pl-1">
                       <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center font-black text-xs text-emerald-300 shrink-0 overflow-hidden shadow-sm">
-                        {profile?.avatarUrl ? (
-                          isImageUrl(profile.avatarUrl) ? (
-                            <img src={profile.avatarUrl} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-xs select-none">{profile.avatarUrl}</span>
-                          )
-                        ) : (
-                          profile?.name?.[0]?.toUpperCase() || 'S'
-                        )}
+                        <UserAvatar avatarUrl={profile?.avatarUrl} name={profile?.name || 'Sen'} fallbackIcon="S" textClassName="text-xs font-black text-emerald-300" />
                       </div>
                       <div className="min-w-0">
                         <span className="text-[9px] text-emerald-400 font-extrabold block leading-none font-mono tracking-wider">SEN</span>
@@ -6305,15 +6287,7 @@ export default function App() {
                     <div className="absolute top-0 right-0 bottom-0 w-1 bg-amber-500" />
                     <div className="flex items-center gap-2 min-w-0 pr-1">
                       <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-400 flex items-center justify-center font-black text-xs text-amber-300 shrink-0 overflow-hidden shadow-sm">
-                        {oppPlayer?.avatarUrl ? (
-                          isImageUrl(oppPlayer.avatarUrl) ? (
-                            <img src={oppPlayer.avatarUrl} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-xs select-none">{oppPlayer.avatarUrl}</span>
-                          )
-                        ) : (
-                          oppDisplayName?.[0]?.toUpperCase() || 'R'
-                        )}
+                        <UserAvatar avatarUrl={oppPlayer?.avatarUrl} name={oppDisplayName || 'Rakip'} fallbackIcon="R" textClassName="text-xs font-black text-amber-300" />
                       </div>
                       <div className="min-w-0">
                         <span className="text-[9px] text-amber-400 font-extrabold block leading-none font-mono tracking-wider">RAKİP</span>
@@ -6983,16 +6957,31 @@ export default function App() {
                   setIsDragging(true);
                 }}
                 onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
+                onDrop={async (e) => {
                   e.preventDefault();
                   setIsDragging(false);
                   const file = e.dataTransfer.files?.[0];
                   if (file) {
                     if (file.type.startsWith('image/')) {
+                      if (profile?.id) {
+                        try {
+                          const publicUrl = await uploadAvatarToStorage(profile.id, file);
+                          if (publicUrl && publicUrl.startsWith('http')) {
+                            setAvatarInput(publicUrl);
+                            return;
+                          }
+                        } catch (upErr) {
+                          console.warn('Storage upload error on drop in App.tsx:', upErr);
+                        }
+                      }
                       const reader = new FileReader();
-                      reader.onload = (ev) => {
+                      reader.onload = async (ev) => {
                         if (ev.target?.result && typeof ev.target.result === 'string') {
-                          setAvatarInput(ev.target.result);
+                          let finalUrl = ev.target.result;
+                          if (profile?.id) {
+                            finalUrl = await uploadAvatarToStorage(profile.id, ev.target.result);
+                          }
+                          setAvatarInput(finalUrl);
                         }
                       };
                       reader.readAsDataURL(file);
@@ -7012,14 +7001,29 @@ export default function App() {
                   type="file"
                   id="avatar-file-upload"
                   accept="image/*"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
                       if (file.type.startsWith('image/')) {
+                        if (profile?.id) {
+                          try {
+                            const publicUrl = await uploadAvatarToStorage(profile.id, file);
+                            if (publicUrl && publicUrl.startsWith('http')) {
+                              setAvatarInput(publicUrl);
+                              return;
+                            }
+                          } catch (upErr) {
+                            console.warn('Storage upload error on select in App.tsx:', upErr);
+                          }
+                        }
                         const reader = new FileReader();
-                        reader.onload = (ev) => {
+                        reader.onload = async (ev) => {
                           if (ev.target?.result && typeof ev.target.result === 'string') {
-                            setAvatarInput(ev.target.result);
+                            let finalUrl = ev.target.result;
+                            if (profile?.id) {
+                              finalUrl = await uploadAvatarToStorage(profile.id, ev.target.result);
+                            }
+                            setAvatarInput(finalUrl);
                           }
                         };
                         reader.readAsDataURL(file);
@@ -7065,7 +7069,6 @@ export default function App() {
         <StatsModal
           profile={profile}
           onClose={() => setShowStatsModal(false)}
-          onResetStats={resetStats}
         />
       )}
 
@@ -7250,8 +7253,15 @@ export default function App() {
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-fadeIn">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
           <div className="bg-[#161D2B] border-2 border-amber-500/50 rounded-3xl p-6 max-w-sm w-full shadow-[0_0_50px_rgba(245,158,11,0.3)] relative z-10 text-white text-center space-y-4 animate-scaleUp">
-            <div className="relative w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 mx-auto flex items-center justify-center text-amber-400">
-              <Swords size={32} className="animate-pulse" />
+            <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-300 p-0.5 shadow-xl mx-auto">
+              <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center overflow-hidden">
+                <UserAvatar 
+                  avatarUrl={pendingSentChallenge.challengedAvatar} 
+                  name={cleanPlayerName(pendingSentChallenge.challengedName, 'Oyuncu')} 
+                  fallbackIcon="⚔️" 
+                  textClassName="text-2xl font-black text-amber-300" 
+                />
+              </div>
               <span className="absolute -top-2 -right-2 bg-amber-500 text-slate-950 text-xs font-black font-mono w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 border-[#161D2B]">
                 {pendingSentChallenge.remainingSeconds}s
               </span>
@@ -7260,8 +7270,8 @@ export default function App() {
               <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full font-mono">
                 ⏳ YANIT BEKLENİYOR
               </span>
-              <h3 className="text-lg font-black text-white mt-2">
-                {pendingSentChallenge.challengedName}
+              <h3 className="text-lg font-black text-white mt-2 truncate max-w-[200px] mx-auto">
+                {cleanPlayerName(pendingSentChallenge.challengedName, 'Oyuncu')}
               </h3>
               <p className="text-xs text-slate-300 mt-1">
                 Meydan okuma isteği gönderildi. Yanıt bekleniyor...
@@ -7302,10 +7312,15 @@ export default function App() {
 
             {/* Content */}
             <div className="relative z-10 text-center space-y-4">
-              {/* Badge Icon */}
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 via-yellow-400 to-amber-500 p-0.5 mx-auto shadow-xl shadow-amber-500/30 animate-pulse">
-                <div className="w-full h-full bg-[#161D2B] rounded-[14px] flex items-center justify-center text-amber-400">
-                  <Swords size={32} className="stroke-[2.5]" />
+              {/* Avatar Box */}
+              <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 via-yellow-400 to-amber-500 p-0.5 mx-auto shadow-xl shadow-amber-500/30">
+                <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center overflow-hidden">
+                  <UserAvatar 
+                    avatarUrl={activeChallenges[0].challengerAvatar} 
+                    name={cleanPlayerName(activeChallenges[0].challengerName, 'Savaşçı')} 
+                    fallbackIcon="⚔️" 
+                    textClassName="text-2xl font-black text-amber-300" 
+                  />
                 </div>
                 <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-xs font-black font-mono w-7 h-7 rounded-full flex items-center justify-center border-2 border-[#161D2B] shadow-md animate-bounce">
                   {activeChallenges[0].remainingSeconds ?? 10}s
@@ -7317,8 +7332,8 @@ export default function App() {
                   ⚔️ YENİ MEYDAN OKUMA!
                 </span>
                 
-                <h3 className="text-lg font-black text-white tracking-wide mt-2">
-                  {activeChallenges[0].challengerName || 'Bir Oyuncu'}
+                <h3 className="text-lg font-black text-white tracking-wide mt-2 truncate max-w-[200px] mx-auto">
+                  {cleanPlayerName(activeChallenges[0].challengerName, 'Bir Oyuncu')}
                 </h3>
                 
                 <p className="text-xs text-gray-300 leading-relaxed font-medium">

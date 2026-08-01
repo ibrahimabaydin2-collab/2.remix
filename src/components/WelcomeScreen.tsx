@@ -10,6 +10,7 @@ import { UserProfile, isImageUrl } from '../types';
 import { getBaseUrl } from '../utils/api';
 import { validateUsername } from '../utils/usernameValidation';
 import { getDailyWordAndLength, getTodayDateStr } from '../data/wordlist';
+import UserAvatar from './UserAvatar';
 import { getXPForLevel, getLevelForScore } from '../utils/scoring';
 import { 
   fetchUsersWhoAddedMe, 
@@ -19,7 +20,8 @@ import {
   sendFriendRequestInFirestore,
   acceptFriendRequestInFirestore,
   removeFriendInFirestore,
-  fetchFriendRequestsAndSync
+  fetchFriendRequestsAndSync,
+  uploadAvatarToStorage
 } from '../lib/firebase';
 import { suspendAudioContext, resumeAudioContext } from '../utils/soundEffects';
 import GoldWallet from './GoldWallet';
@@ -193,16 +195,15 @@ export default function WelcomeScreen({
       if (isIncoming) {
         // Accept incoming request
         await acceptFriendRequestInFirestore(profile.id, targetId);
+        const currentFriends = profile.friends || [];
+        const updatedFriends = Array.from(new Set([...currentFriends, targetId]));
+        if (onUpdateFriends) {
+          onUpdateFriends(updatedFriends);
+        }
       } else {
         // Send new friend request
         const targetName = typeof playerOrId === 'object' ? playerOrId.name : undefined;
         await sendFriendRequestInFirestore(profile, targetId, targetName);
-      }
-
-      const currentFriends = profile.friends || [];
-      const updatedFriends = Array.from(new Set([...currentFriends, targetId]));
-      if (onUpdateFriends) {
-        onUpdateFriends(updatedFriends);
       }
       await refreshFriendsList();
     } catch (err) {
@@ -219,18 +220,23 @@ export default function WelcomeScreen({
       if (onUpdateFriends) {
         onUpdateFriends(updatedFriends);
       }
-      await refreshFriendsList();
+      const updatedProfile: UserProfile = {
+        ...profile,
+        friends: updatedFriends
+      };
+      await refreshFriendsList(updatedProfile);
     } catch (err) {
       console.error('Error in removeFriend:', err);
     }
   };
 
-  const refreshFriendsList = async () => {
-    if (!isOnline || !profile?.id) return;
+  const refreshFriendsList = async (overrideProfile?: UserProfile) => {
+    const activeProfile = overrideProfile || profile;
+    if (!isOnline || !activeProfile?.id) return;
     if (confirmedFriends.length === 0) setLoadingFriends(true);
     try {
       const { confirmedFriends: confirmed, incomingRequests: incoming, updatedFriendsArray } = 
-        await fetchFriendRequestsAndSync(profile);
+        await fetchFriendRequestsAndSync(activeProfile);
 
       const confirmedMapped = confirmed.map(p => ({
         id: p.id,
@@ -552,10 +558,23 @@ export default function WelcomeScreen({
     return true;
   };
 
-  const handleImageFileSelected = (file: File) => {
+  const handleImageFileSelected = async (file: File) => {
     if (!file) return;
     setPermissionError(null);
     try {
+      if (profile?.id) {
+        try {
+          const publicUrl = await uploadAvatarToStorage(profile.id, file);
+          if (publicUrl && publicUrl.startsWith('http')) {
+            setSelectedAvatar(publicUrl);
+            setPermissionError(null);
+            return;
+          }
+        } catch (upErr) {
+          console.warn('Direct upload error in WelcomeScreen:', upErr);
+        }
+      }
+
       const reader = new FileReader();
       reader.onerror = () => {
         const msg = 'Kameraya veya galeriye erişim izni vermeniz gerekmektedir.';
@@ -569,7 +588,7 @@ export default function WelcomeScreen({
           setPermissionError(msg);
           if (showToast) showToast(msg, 'error');
         };
-        img.onload = () => {
+        img.onload = async () => {
           try {
             const canvas = document.createElement('canvas');
             const MAX_WIDTH = 128;
@@ -595,7 +614,11 @@ export default function WelcomeScreen({
             if (ctx) {
               ctx.drawImage(img, 0, 0, width, height);
               const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-              setSelectedAvatar(dataUrl);
+              let finalUrl = dataUrl;
+              if (profile?.id) {
+                finalUrl = await uploadAvatarToStorage(profile.id, dataUrl);
+              }
+              setSelectedAvatar(finalUrl);
               setPermissionError(null);
             }
           } catch (err) {
@@ -1325,11 +1348,7 @@ export default function WelcomeScreen({
                   onClick={() => setIsEditing(true)}
                   title="Profil resmini değiştir"
                 >
-                  {profile?.avatarUrl && isImageUrl(profile.avatarUrl) ? (
-                     <img src={profile.avatarUrl} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                     <span className="text-2xl sm:text-3xl select-none">{profile?.avatarUrl || '🧠'}</span>
-                  )}
+                  <UserAvatar avatarUrl={profile?.avatarUrl} name={profile?.name} fallbackIcon="🧠" textClassName="text-2xl sm:text-3xl font-black text-amber-300" />
                 </div>
 
                 <div className="flex flex-col">
@@ -1767,6 +1786,7 @@ export default function WelcomeScreen({
           }}
           isChallengePending={isChallengePending}
           wordLength={wordLength}
+          showToast={showToast}
         />
       )}
 

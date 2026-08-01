@@ -61,16 +61,17 @@ export function verifyScoringAccuracy(score: number): boolean {
 
 /**
  * Calculates the cumulative XP (score) required to reach a specific level.
- * Handles level up to 500 with a progressive, quadratic/exponential scale.
+ * Handles level up to 500.
  * 
- * Levels 1 to 5 require exactly:
+ * Levels 1 to 6 have fixed requirements:
  * - Level 1: 0 P
  * - Level 2: 25 P
  * - Level 3: 75 P
  * - Level 4: 150 P
  * - Level 5: 300 P
+ * - Level 6: 550 P
  * 
- * After Level 5, the XP requirement increases algorithmically up to Level 500.
+ * After Level 6, every level requires exactly 250 XP more.
  */
 export function getXPForLevel(level: number): number {
   if (level <= 1) return 0;
@@ -78,14 +79,10 @@ export function getXPForLevel(level: number): number {
   if (level === 3) return 75;
   if (level === 4) return 150;
   if (level === 5) return 300;
+  if (level === 6) return 550;
 
-  let totalXP = 300;
-  for (let l = 5; l < level; l++) {
-    // Progressive linear growth of the interval: 150, 200, 250, 300...
-    const increment = 50 * l;
-    totalXP += increment;
-  }
-  return totalXP;
+  // 6. seviyeden sonraki her seviye için 250 puan ekler
+  return 550 + ((level - 6) * 250);
 }
 
 /**
@@ -97,14 +94,14 @@ export function getLevelForScore(score: number): number {
   if (score < 75) return 2;
   if (score < 150) return 3;
   if (score < 300) return 4;
-
-  let level = 5;
-  while (level < 500) {
-    if (score < getXPForLevel(level + 1)) {
-      break;
-    }
-    level++;
-  }
+  if (score < 550) return 5;
+  
+  // 550 puan ve sonrasını matematiksel olarak sabit 250 puana böler
+  // Döngü (while) kullanmadığı için oyunun performansını (FPS) artırır
+  let level = 6 + Math.floor((score - 550) / 250);
+  
+  // 500. seviye sınırını koruyoruz
+  if (level > 500) return 500;
   return level;
 }
 

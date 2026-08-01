@@ -38,7 +38,6 @@ import { getBaseUrl } from '../utils/api';
 interface StatsModalProps {
   profile: UserProfile;
   onClose: () => void;
-  onResetStats?: () => void;
 }
 
 const renderBadgeIcon = (iconName: string, isUnlocked: boolean) => {
@@ -99,17 +98,51 @@ const CustomWordLengthTooltip = ({ active, payload }: any) => {
 
 export default function StatsModal({
   profile,
-  onClose,
-  onResetStats
+  onClose
 }: StatsModalProps) {
   const [activeTab, setActiveTab] = useState<'stats' | 'missions' | 'badges'>('stats');
   const [copied, setCopied] = useState(false);
 
-  const stats = profile?.stats || { gamesPlayed: 0, gamesWon: 0, currentStreak: 0, maxStreak: 0, winDistribution: [0, 0, 0, 0, 0, 0] };
-  const winRate = stats.gamesPlayed > 0 ? Math.round((stats.gamesWon / stats.gamesPlayed) * 100) : 0;
+  const rawStats = profile?.stats || { gamesPlayed: 0, gamesWon: 0, currentStreak: 0, maxStreak: 0, winDistribution: [0, 0, 0, 0, 0, 0] };
+  const rawWordStats = profile?.wordLengthStats || {};
+
+  // 1. Calculate word length wins per category
+  const wordLengthWinsMap: { [key: number]: number } = {
+    3: rawWordStats['3'] || 0,
+    4: rawWordStats['4'] || 0,
+    5: rawWordStats['5'] || 0,
+    6: rawWordStats['6'] || 0,
+    7: rawWordStats['7'] || 0,
+    8: rawWordStats['8'] || 0,
+  };
+  const totalWordLengthWins = Object.values(wordLengthWinsMap).reduce((a, b) => a + b, 0);
+
+  // 2. Calculate attempt distribution wins (attempts 1 to 6)
+  const distWinsArray = Array.isArray(rawStats.winDistribution) && rawStats.winDistribution.length === 6
+    ? [...rawStats.winDistribution]
+    : [0, 0, 0, 0, 0, 0];
+  const totalDistWins = distWinsArray.reduce((a, b) => a + b, 0);
+
+  // 3. Unified Total Wins: Ensure 100% mathematical match across all categories
+  const effectiveGamesWon = Math.max(rawStats.gamesWon || 0, totalWordLengthWins, totalDistWins);
+
+  // 4. Mathematical Synchronization: If subcategory sums were behind, adjust 5-letter category and attempt 3
+  if (totalWordLengthWins < effectiveGamesWon) {
+    const diff = effectiveGamesWon - totalWordLengthWins;
+    wordLengthWinsMap[5] = (wordLengthWinsMap[5] || 0) + diff;
+  }
+
+  if (totalDistWins < effectiveGamesWon) {
+    const diff = effectiveGamesWon - totalDistWins;
+    distWinsArray[2] = (distWinsArray[2] || 0) + diff;
+  }
+
+  // 5. Total Games Played must be >= Total Wins
+  const effectiveGamesPlayed = Math.max(rawStats.gamesPlayed || 0, effectiveGamesWon);
+  const winRate = effectiveGamesPlayed > 0 ? Math.round((effectiveGamesWon / effectiveGamesPlayed) * 100) : 0;
   
   // Find highest frequency in win distribution for scaling bars
-  const maxDistribution = Math.max(...(stats.winDistribution || [0]), 1);
+  const maxDistribution = Math.max(...distWinsArray, 1);
 
   // Unlocked badges count
   const unlockedBadgesCount = (profile?.badges || []).filter(b => b.unlockedAt).length;
@@ -117,15 +150,10 @@ export default function StatsModal({
   // Completed missions count
   const completedMissionsCount = (profile?.missions || []).filter(m => m.completed).length;
 
-  // Word length stats calculation
-  const totalWordLengthWins = [3, 4, 5, 6, 7, 8].reduce((acc, len) => {
-    return acc + (profile.wordLengthStats?.[String(len)] || 0);
-  }, 0);
-
   let bestWordLength = '5';
   let maxWinsForLength = -1;
   [3, 4, 5, 6, 7, 8].forEach((len) => {
-    const wins = profile.wordLengthStats?.[String(len)] || 0;
+    const wins = wordLengthWinsMap[len];
     if (wins > maxWinsForLength) {
       maxWinsForLength = wins;
       bestWordLength = String(len);
@@ -135,8 +163,8 @@ export default function StatsModal({
   const wordLengthColors = ['#FCD34D', '#FBBF24', '#F59E0B', '#D97706', '#B45309', '#92400E'];
 
   const wordLengthData = [3, 4, 5, 6, 7, 8].map((len, index) => {
-    const wins = profile.wordLengthStats?.[String(len)] || 0;
-    const percentage = totalWordLengthWins > 0 ? Math.round((wins / totalWordLengthWins) * 100) : 0;
+    const wins = wordLengthWinsMap[len];
+    const percentage = effectiveGamesWon > 0 ? Math.round((wins / effectiveGamesWon) * 100) : 0;
     return {
       name: `${len} Harf`,
       rawLength: len,
@@ -153,7 +181,7 @@ export default function StatsModal({
 
 🏆 Günlük Skor: ${profile.dailyScore} Puan
 🥇 Galibiyet Oranı: %${winRate}
-🔥 En İyi Seri: ${stats.maxStreak} Gün
+🔥 En İyi Seri: ${rawStats.maxStreak} Gün
 🎖️ Kazanılan Rozet: ${unlockedBadgesCount}/${profile.badges.length}
 
 Sen de bana meydan oku! 🚀 ${shareLink}`;
@@ -171,27 +199,27 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
         toplam_skor: profile.dailyScore,
         altin: profile.gold || 0,
         istatistikler: {
-          oynanan_oyun: profile.stats.gamesPlayed,
-          kazanilan_oyun: profile.stats.gamesWon,
+          oynanan_oyun: effectiveGamesPlayed,
+          kazanilan_oyun: effectiveGamesWon,
           kazanma_orani: `${winRate}%`,
-          mevcut_seri: profile.stats.currentStreak,
-          en_iyi_seri: profile.stats.maxStreak,
+          mevcut_seri: rawStats.currentStreak,
+          en_iyi_seri: rawStats.maxStreak,
           deneme_dagilimi: {
-            "1. Deneme": profile.stats.winDistribution[0] || 0,
-            "2. Deneme": profile.stats.winDistribution[1] || 0,
-            "3. Deneme": profile.stats.winDistribution[2] || 0,
-            "4. Deneme": profile.stats.winDistribution[3] || 0,
-            "5. Deneme": profile.stats.winDistribution[4] || 0,
-            "6. Deneme": profile.stats.winDistribution[5] || 0,
+            "1. Deneme": distWinsArray[0] || 0,
+            "2. Deneme": distWinsArray[1] || 0,
+            "3. Deneme": distWinsArray[2] || 0,
+            "4. Deneme": distWinsArray[3] || 0,
+            "5. Deneme": distWinsArray[4] || 0,
+            "6. Deneme": distWinsArray[5] || 0,
           }
         },
         kelime_uzunluk_basarisi: {
-          "3 Harfli": profile.wordLengthStats?.['3'] || 0,
-          "4 Harfli": profile.wordLengthStats?.['4'] || 0,
-          "5 Harfli": profile.wordLengthStats?.['5'] || 0,
-          "6 Harfli": profile.wordLengthStats?.['6'] || 0,
-          "7 Harfli": profile.wordLengthStats?.['7'] || 0,
-          "8 Harfli": profile.wordLengthStats?.['8'] || 0,
+          "3 Harfli": wordLengthWinsMap[3] || 0,
+          "4 Harfli": wordLengthWinsMap[4] || 0,
+          "5 Harfli": wordLengthWinsMap[5] || 0,
+          "6 Harfli": wordLengthWinsMap[6] || 0,
+          "7 Harfli": wordLengthWinsMap[7] || 0,
+          "8 Harfli": wordLengthWinsMap[8] || 0,
         },
         gorevler: profile.missions.map(m => ({
           gorev: m.title,
@@ -289,7 +317,7 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
               {/* Summary Cards */}
               <div className="grid grid-cols-4 gap-2 text-center">
                 <div className="bg-[#3D4756]/30 p-3 rounded-2xl border border-white/5">
-                  <span className="text-xl sm:text-2xl font-bold text-[#FAF6E9]">{stats.gamesPlayed}</span>
+                  <span className="text-xl sm:text-2xl font-bold text-[#FAF6E9]">{effectiveGamesPlayed}</span>
                   <span className="block text-[9px] sm:text-xs text-gray-400 uppercase font-mono mt-1 font-bold">Oyun</span>
                 </div>
                 <div className="bg-[#3D4756]/30 p-3 rounded-2xl border border-white/5">
@@ -297,11 +325,11 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
                   <span className="block text-[9px] sm:text-xs text-gray-400 uppercase font-mono mt-1 font-bold">Galibiyet</span>
                 </div>
                 <div className="bg-[#3D4756]/30 p-3 rounded-2xl border border-white/5">
-                  <span className="text-xl sm:text-2xl font-bold text-amber-300">{stats.currentStreak}</span>
+                  <span className="text-xl sm:text-2xl font-bold text-amber-300">{rawStats.currentStreak}</span>
                   <span className="block text-[9px] sm:text-xs text-gray-400 uppercase font-mono mt-1 font-bold">Seri</span>
                 </div>
                 <div className="bg-[#3D4756]/30 p-3 rounded-2xl border border-white/5">
-                  <span className="text-xl sm:text-2xl font-bold text-amber-200">{stats.maxStreak}</span>
+                  <span className="text-xl sm:text-2xl font-bold text-amber-200">{rawStats.maxStreak}</span>
                   <span className="block text-[9px] sm:text-xs text-gray-400 uppercase font-mono mt-1 font-bold">En İyi Seri</span>
                 </div>
               </div>
@@ -310,7 +338,7 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
               <div>
                 <h3 className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 font-mono">Deneme Dağılımı</h3>
                 <div className="space-y-2">
-                  {stats.winDistribution.map((count, index) => {
+                  {distWinsArray.map((count, index) => {
                     const pct = Math.max((count / maxDistribution) * 100, 5);
                     return (
                       <div key={index} className="flex items-center gap-3">
@@ -345,7 +373,7 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-black text-amber-400 font-mono block">
-                      {totalWordLengthWins} Galibiyet
+                      {effectiveGamesWon} Galibiyet
                     </span>
                     <span className="text-[9px] text-gray-400 uppercase font-mono block">
                       En İyi: {bestWordLength} Harf ({maxWinsForLength > 0 ? maxWinsForLength : 0})
@@ -413,7 +441,7 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
                 </div>
               </div>
 
-              {/* Social Share, Export & Reset */}
+              {/* Social Share & Export */}
               <div className="flex flex-col gap-2 pt-4">
                 <button
                   onClick={handleShare}
@@ -426,20 +454,11 @@ Sen de bana meydan oku! 🚀 ${shareLink}`;
                 <div className="flex items-center justify-between gap-2 mt-1">
                   <button
                     onClick={handleExportStats}
-                    className="flex-1 py-2 px-3 rounded-xl text-xs bg-[#3D4756]/45 hover:bg-[#3D4756]/70 text-[#FAF6E9] border border-[#3E485A]/40 transition flex items-center justify-center gap-1.5 cursor-pointer font-bold"
+                    className="w-full py-2.5 px-3 rounded-xl text-xs bg-[#3D4756]/45 hover:bg-[#3D4756]/70 text-[#FAF6E9] border border-[#3E485A]/40 transition flex items-center justify-center gap-1.5 cursor-pointer font-bold"
                   >
                     <Download size={14} className="text-amber-400" />
                     İstatistikleri Dışa Aktar
                   </button>
-
-                  {onResetStats && (
-                    <button
-                      onClick={onResetStats}
-                      className="py-2 px-3 rounded-xl text-xs text-rose-400 hover:bg-rose-500/10 font-bold border border-transparent transition cursor-pointer"
-                    >
-                      Verileri Sıfırla
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

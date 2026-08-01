@@ -40,15 +40,68 @@ import {
   updateDoc,
   arrayUnion,
   arrayRemove,
+  increment,
+  deleteField,
   setLogLevel,
-  onSnapshot
+  onSnapshot,
+  writeBatch
 } from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref as storageRef, 
+  uploadString, 
+  getDownloadURL, 
+  uploadBytes 
+} from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile, FriendRequest } from '../types';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
+
+/**
+ * Uploads a profile avatar image (File, Blob, base64 Data URL, or local path) to Firebase Storage
+ * and returns the public HTTPS download URL.
+ */
+export async function uploadAvatarToStorage(userId: string, imageSource: File | Blob | string): Promise<string> {
+  if (!userId || !imageSource) return typeof imageSource === 'string' ? imageSource : '';
+
+  // If it's already a standard public HTTP/HTTPS URL, no re-upload needed
+  if (typeof imageSource === 'string' && (imageSource.startsWith('http://') || imageSource.startsWith('https://')) && !imageSource.includes('data:image')) {
+    return imageSource;
+  }
+
+  // If it's an emoji or short preset string (e.g. '🧠'), return as is
+  if (typeof imageSource === 'string' && imageSource.length <= 8 && !imageSource.includes('/') && !imageSource.includes('.')) {
+    return imageSource;
+  }
+
+  try {
+    const time = Date.now();
+    const avatarPath = storageRef(storage, `avatars/${userId}_${time}.jpg`);
+
+    if (imageSource instanceof File || imageSource instanceof Blob) {
+      const snap = await uploadBytes(avatarPath, imageSource, { contentType: 'image/jpeg' });
+      const downloadUrl = await getDownloadURL(snap.ref);
+      console.log('Avatar file successfully uploaded to Firebase Storage:', downloadUrl);
+      return downloadUrl;
+    } else if (typeof imageSource === 'string' && imageSource.startsWith('data:image')) {
+      const snap = await uploadString(avatarPath, imageSource, 'data_url');
+      const downloadUrl = await getDownloadURL(snap.ref);
+      console.log('Avatar dataUrl successfully uploaded to Firebase Storage:', downloadUrl);
+      return downloadUrl;
+    }
+  } catch (err) {
+    console.warn('Firebase Storage upload failed or unconfigured, returning source as fallback:', err);
+  }
+
+  if (typeof imageSource === 'string' && imageSource.startsWith('data:image')) {
+    return imageSource;
+  }
+  return typeof imageSource === 'string' ? imageSource : '';
+}
 
 // Use the custom firestore database ID from firebase-applet-config.json if specified
 const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
@@ -384,6 +437,13 @@ export function createOrMergeProfile(
     }
   }
 
+  // Ensure primary profile's friends list takes strict precedence if explicitly defined
+  // so deleted friends aren't resurrected from stale local storage or fallback caches
+  let finalFriends = Array.from(friendSet);
+  if (primary && Array.isArray(primary.friends)) {
+    finalFriends = primary.friends;
+  }
+
   if (primary?.name && !isGenericName(primary.name)) {
     mergedName = primary.name;
   }
@@ -401,7 +461,7 @@ export function createOrMergeProfile(
     wordLengthStats: mergedWordLengthStats,
     badges: Array.from(badgeMap.values()),
     missions: Array.from(missionMap.values()),
-    friends: Array.from(friendSet),
+    friends: finalFriends,
     nameSet: mergedNameSet || !!mergedName,
     deviceId: mergedDeviceId,
     lastDailyLoginClaim: mergedLastDailyLoginClaim,
@@ -410,7 +470,8 @@ export function createOrMergeProfile(
 }
 
 /**
- * Subscribes to real-time changes of a user profile in Firestore
+ * Subscribes to real-time changes of a user profile in Firestore,
+ * combining main profile document and the stats subcollection.
  */
 export function subscribeToUserProfile(
   uid: string,
@@ -419,14 +480,31 @@ export function subscribeToUserProfile(
 ): () => void {
   if (!uid) return () => {};
   const userDocRef = doc(db, 'users', uid);
-  
-  return onSnapshot(
+  const statsDocRef = doc(db, 'users', uid, 'stats', 'summary');
+
+  let userData: UserProfile | null = null;
+  let statsData: any = null;
+
+  const notify = () => {
+    if (!userData) return;
+    const combinedProfile = createOrMergeProfile(userData, {
+      id: uid,
+      dailyScore: typeof statsData?.dailyScore === 'number' ? statsData.dailyScore : userData.dailyScore,
+      score: typeof statsData?.score === 'number' ? statsData.score : (userData as any).score,
+      stats: statsData?.stats ? { ...userData.stats, ...statsData.stats } : userData.stats,
+      wordLengthStats: statsData?.wordLengthStats ? { ...userData.wordLengthStats, ...statsData.wordLengthStats } : userData.wordLengthStats,
+      ...(statsData?.solvedWords ? { solvedWords: statsData.solvedWords } : {}),
+      ...(statsData?.knownWords ? { knownWords: statsData.knownWords } : {})
+    });
+    onUpdate(combinedProfile);
+  };
+
+  const unsubUser = onSnapshot(
     userDocRef,
     (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.data() as UserProfile;
-        const fullProfile = createOrMergeProfile(data, { id: uid });
-        onUpdate(fullProfile);
+        userData = snapshot.data() as UserProfile;
+        notify();
       }
     },
     (err) => {
@@ -434,6 +512,22 @@ export function subscribeToUserProfile(
       if (onError) onError(err);
     }
   );
+
+  const unsubStats = onSnapshot(
+    statsDocRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        statsData = snapshot.data();
+        notify();
+      }
+    },
+    () => {}
+  );
+
+  return () => {
+    unsubUser();
+    unsubStats();
+  };
 }
 
 /**
@@ -471,9 +565,9 @@ export async function fetchUserProfileByDeviceId(deviceId: string): Promise<User
 /**
  * Deletes a user profile document from Firestore
  */
-export async function deleteUserProfile(uid: string): Promise<void> {
+export async function deleteUserProfile(uid: string, force = false): Promise<void> {
   try {
-    if (auth.currentUser && uid !== auth.currentUser.uid) {
+    if (!force && auth.currentUser && uid !== auth.currentUser.uid) {
       console.warn(`Skipping deleteUserProfile for ${uid} because it does not match current authenticated user ID ${auth.currentUser.uid}`);
       return;
     }
@@ -485,20 +579,42 @@ export async function deleteUserProfile(uid: string): Promise<void> {
 }
 
 /**
- * Fetches the user profile from Firestore
+ * Cleans up duplicate / ghost user profile documents for the same deviceId in Firestore
+ */
+export async function cleanupGhostUserProfiles(deviceId: string, currentUid: string): Promise<void> {
+  // Safe no-op: Do not delete documents from Firestore automatically to preserve user profiles
+  return;
+}
+
+/**
+ * Fetches the user profile from Firestore, including subcollection statistics
  */
 export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
   const userDocRef = doc(db, 'users', uid);
+  const statsDocRef = doc(db, 'users', uid, 'stats', 'summary');
+
   try {
-    // 1. Try to fetch from server with a timeout
-    const userSnap = await Promise.race([
-      getDoc(userDocRef),
-      new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Firestore Fetch Timeout')), 4000))
-    ]) as any;
+    const [userSnap, statsSnap] = await Promise.all([
+      Promise.race([
+        getDoc(userDocRef),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Firestore Fetch Timeout')), 4000))
+      ]) as any,
+      getDoc(statsDocRef).catch(() => null)
+    ]);
     
     if (userSnap && userSnap.exists()) {
       const data = userSnap.data() as UserProfile;
-      return { ...data, id: data.id || userSnap.id };
+      const statsData = (statsSnap && statsSnap.exists()) ? statsSnap.data() : {};
+
+      return createOrMergeProfile(data, {
+        id: data.id || userSnap.id,
+        dailyScore: typeof statsData.dailyScore === 'number' ? statsData.dailyScore : data.dailyScore,
+        score: typeof statsData.score === 'number' ? statsData.score : (data as any).score,
+        stats: statsData.stats ? { ...data.stats, ...statsData.stats } : data.stats,
+        wordLengthStats: statsData.wordLengthStats ? { ...data.wordLengthStats, ...statsData.wordLengthStats } : data.wordLengthStats,
+        ...(statsData.solvedWords ? { solvedWords: statsData.solvedWords } : {}),
+        ...(statsData.knownWords ? { knownWords: statsData.knownWords } : {})
+      });
     }
   } catch (error) {
     console.warn('Failed to fetch user profile from server, trying offline cache:', error);
@@ -585,6 +701,242 @@ export function matchesSearchTerm(userName: string, searchTerm: string): boolean
 }
 
 /**
+ * Synchronizes a user's updated username and avatar across all Firestore collections
+ * (friend_requests, challenges, matches, rooms, matchmaking queues) using Batch Writes.
+ * Ensures strict UID-based identity integrity.
+ */
+export async function syncUserProfileAcrossFirestore(
+  uid: string,
+  newName: string,
+  newAvatarUrl?: string
+): Promise<void> {
+  if (!uid || !newName) return;
+  const cleanName = newName.trim();
+  if (!cleanName) return;
+
+  try {
+    const batch = writeBatch(db);
+    let operationCount = 0;
+
+    // 1. Friend Requests (fromUid == uid)
+    const qFriendReqFrom = query(collection(db, 'friend_requests'), where('fromUid', '==', uid));
+    const snapFriendReqFrom = await getDocs(qFriendReqFrom).catch(() => null);
+    if (snapFriendReqFrom) {
+      snapFriendReqFrom.forEach(docSnap => {
+        const updateData: any = { fromName: cleanName };
+        if (newAvatarUrl) updateData.fromAvatarUrl = newAvatarUrl;
+        batch.update(docSnap.ref, updateData);
+        operationCount++;
+      });
+    }
+
+    // 2. Friend Requests (toUid == uid)
+    const qFriendReqTo = query(collection(db, 'friend_requests'), where('toUid', '==', uid));
+    const snapFriendReqTo = await getDocs(qFriendReqTo).catch(() => null);
+    if (snapFriendReqTo) {
+      snapFriendReqTo.forEach(docSnap => {
+        batch.update(docSnap.ref, { toName: cleanName });
+        operationCount++;
+      });
+    }
+
+    // 3. Challenges (challengerId == uid)
+    const qChallengesFrom = query(collection(db, 'challenges'), where('challengerId', '==', uid));
+    const snapChallengesFrom = await getDocs(qChallengesFrom).catch(() => null);
+    if (snapChallengesFrom) {
+      snapChallengesFrom.forEach(docSnap => {
+        const updateData: any = { challengerName: cleanName };
+        if (newAvatarUrl) updateData.challengerAvatar = newAvatarUrl;
+        batch.update(docSnap.ref, updateData);
+        operationCount++;
+      });
+    }
+
+    // 4. Challenges (challengedId == uid)
+    const qChallengesTo = query(collection(db, 'challenges'), where('challengedId', '==', uid));
+    const snapChallengesTo = await getDocs(qChallengesTo).catch(() => null);
+    if (snapChallengesTo) {
+      snapChallengesTo.forEach(docSnap => {
+        batch.update(docSnap.ref, { challengedName: cleanName });
+        operationCount++;
+      });
+    }
+
+    // 5. Matches (player1.id == uid)
+    const qMatchesP1 = query(collection(db, 'matches'), where('player1.id', '==', uid));
+    const snapMatchesP1 = await getDocs(qMatchesP1).catch(() => null);
+    if (snapMatchesP1) {
+      snapMatchesP1.forEach(docSnap => {
+        const updateData: any = {
+          'player1.name': cleanName,
+          [`players.${uid}.name`]: cleanName
+        };
+        if (newAvatarUrl) {
+          updateData['player1.avatarUrl'] = newAvatarUrl;
+          updateData[`players.${uid}.avatarUrl`] = newAvatarUrl;
+        }
+        batch.update(docSnap.ref, updateData);
+        operationCount++;
+      });
+    }
+
+    // 6. Matches (player2.id == uid)
+    const qMatchesP2 = query(collection(db, 'matches'), where('player2.id', '==', uid));
+    const snapMatchesP2 = await getDocs(qMatchesP2).catch(() => null);
+    if (snapMatchesP2) {
+      snapMatchesP2.forEach(docSnap => {
+        const updateData: any = {
+          'player2.name': cleanName,
+          [`players.${uid}.name`]: cleanName
+        };
+        if (newAvatarUrl) {
+          updateData['player2.avatarUrl'] = newAvatarUrl;
+          updateData[`players.${uid}.avatarUrl`] = newAvatarUrl;
+        }
+        batch.update(docSnap.ref, updateData);
+        operationCount++;
+      });
+    }
+
+    // 7. Rooms (player1.id == uid)
+    const qRoomsP1 = query(collection(db, 'rooms'), where('player1.id', '==', uid));
+    const snapRoomsP1 = await getDocs(qRoomsP1).catch(() => null);
+    if (snapRoomsP1) {
+      snapRoomsP1.forEach(docSnap => {
+        const updateData: any = {
+          'player1.name': cleanName,
+          [`players.${uid}.name`]: cleanName
+        };
+        if (newAvatarUrl) {
+          updateData['player1.avatarUrl'] = newAvatarUrl;
+          updateData[`players.${uid}.avatarUrl`] = newAvatarUrl;
+        }
+        batch.update(docSnap.ref, updateData);
+        operationCount++;
+      });
+    }
+
+    // 8. Rooms (player2.id == uid)
+    const qRoomsP2 = query(collection(db, 'rooms'), where('player2.id', '==', uid));
+    const snapRoomsP2 = await getDocs(qRoomsP2).catch(() => null);
+    if (snapRoomsP2) {
+      snapRoomsP2.forEach(docSnap => {
+        const updateData: any = {
+          'player2.name': cleanName,
+          [`players.${uid}.name`]: cleanName
+        };
+        if (newAvatarUrl) {
+          updateData['player2.avatarUrl'] = newAvatarUrl;
+          updateData[`players.${uid}.avatarUrl`] = newAvatarUrl;
+        }
+        batch.update(docSnap.ref, updateData);
+        operationCount++;
+      });
+    }
+
+    // 9. Matchmaking Queues
+    const queueNames = ['matchmaking_queue', ...[3, 4, 5, 6, 7, 8, 9, 10].map(l => `matchmaking_queue_${l}`)];
+    for (const qName of queueNames) {
+      const queueDocRef = doc(db, qName, uid);
+      const queueSnap = await getDoc(queueDocRef).catch(() => null);
+      if (queueSnap && queueSnap.exists()) {
+        const updateData: any = { name: cleanName };
+        if (newAvatarUrl) updateData.avatarUrl = newAvatarUrl;
+        batch.update(queueDocRef, updateData);
+        operationCount++;
+      }
+    }
+
+    // Execute batch write if operations are queued
+    if (operationCount > 0) {
+      await batch.commit();
+      console.log(`Synced username "${cleanName}" across ${operationCount} Firestore documents for UID ${uid}.`);
+    }
+  } catch (error) {
+    console.warn('Failed to sync username across Firestore collections:', error);
+  }
+}
+
+/**
+ * Updates atomic statistics in the subcollection users/{uid}/stats/summary
+ * using increment() for numerical fields and arrayUnion() for solved words.
+ * Also cleans up heavy stats fields from the main profile document to prevent bloating.
+ */
+export async function updateUserStatsInFirestore(
+  uid: string,
+  updates: {
+    scoreDelta?: number;
+    dailyScoreDelta?: number;
+    gamesPlayedDelta?: number;
+    gamesWonDelta?: number;
+    currentStreak?: number;
+    maxStreak?: number;
+    goldDelta?: number;
+    wordLength?: number | string;
+    solvedWord?: string;
+    winDistributionIndex?: number;
+  }
+): Promise<void> {
+  if (!uid) return;
+
+  try {
+    const statsDocRef = doc(db, 'users', uid, 'stats', 'summary');
+    const statsPayload: any = {
+      lastUpdated: new Date().toISOString(),
+      updatedAt: serverTimestamp()
+    };
+
+    if (updates.scoreDelta && updates.scoreDelta > 0) {
+      statsPayload.score = increment(updates.scoreDelta);
+    }
+    if (updates.dailyScoreDelta && updates.dailyScoreDelta > 0) {
+      statsPayload.dailyScore = increment(updates.dailyScoreDelta);
+    }
+    if (updates.gamesPlayedDelta && updates.gamesPlayedDelta > 0) {
+      statsPayload['stats.gamesPlayed'] = increment(updates.gamesPlayedDelta);
+    }
+    if (updates.gamesWonDelta && updates.gamesWonDelta > 0) {
+      statsPayload['stats.gamesWon'] = increment(updates.gamesWonDelta);
+    }
+    if (updates.goldDelta) {
+      statsPayload.gold = increment(updates.goldDelta);
+    }
+    if (updates.wordLength) {
+      statsPayload[`wordLengthStats.${updates.wordLength}`] = increment(1);
+    }
+    if (updates.winDistributionIndex !== undefined && updates.winDistributionIndex >= 0 && updates.winDistributionIndex < 6) {
+      statsPayload[`stats.winDistribution.${updates.winDistributionIndex}`] = increment(1);
+    }
+    if (updates.currentStreak !== undefined) {
+      statsPayload['stats.currentStreak'] = updates.currentStreak;
+    }
+    if (updates.maxStreak !== undefined) {
+      statsPayload['stats.maxStreak'] = updates.maxStreak;
+    }
+
+    // Requirement 2: Use arrayUnion when adding solved words to prevent duplicate entries
+    if (updates.solvedWord) {
+      const cleanWord = updates.solvedWord.trim().toUpperCase();
+      if (cleanWord) {
+        statsPayload.solvedWords = arrayUnion(cleanWord);
+        statsPayload.knownWords = arrayUnion(cleanWord);
+      }
+    }
+
+    await setDoc(statsDocRef, statsPayload, { merge: true });
+
+    // Requirement 3: Clean up heavy stats fields from main user profile document to prevent bloating
+    const userDocRef = doc(db, 'users', uid);
+    await updateDoc(userDocRef, {
+      solvedWords: deleteField(),
+      knownWords: deleteField()
+    }).catch(() => {});
+  } catch (err) {
+    console.warn('Failed to update user stats in subcollection:', err);
+  }
+}
+
+/**
  * Saves or updates the user profile in Firestore
  */
 export async function saveUserProfileToFirestore(profile: UserProfile): Promise<void> {
@@ -602,6 +954,18 @@ export async function saveUserProfileToFirestore(profile: UserProfile): Promise<
     if (!effectiveProfile.id) {
       console.warn('Cannot save profile without an ID');
       return;
+    }
+
+    // Automatically upload base64/dataUrl/local avatar image to Firebase Storage if needed
+    if (effectiveProfile.avatarUrl && (effectiveProfile.avatarUrl.startsWith('data:image') || effectiveProfile.avatarUrl.startsWith('blob:') || effectiveProfile.avatarUrl.startsWith('file:'))) {
+      try {
+        const publicUrl = await uploadAvatarToStorage(effectiveProfile.id, effectiveProfile.avatarUrl);
+        if (publicUrl && publicUrl.startsWith('http')) {
+          effectiveProfile.avatarUrl = publicUrl;
+        }
+      } catch (upErr) {
+        console.warn('Auto avatar upload error in saveUserProfileToFirestore:', upErr);
+      }
     }
 
     // Update browser local storage immediately FIRST so client-side state is always perfectly synchronized
@@ -627,7 +991,12 @@ export async function saveUserProfileToFirestore(profile: UserProfile): Promise<
     const termLowerTr = cleanName.toLocaleLowerCase('tr-TR');
     const termClean = turkishToEnglishFriendly(cleanName);
 
-    const dataToSave = {
+    // Extract stats & word arrays to store them in subcollection users/{uid}/stats/summary
+    const solvedWordsArray = Array.isArray((effectiveProfile as any).solvedWords) ? (effectiveProfile as any).solvedWords : [];
+    const knownWordsArray = Array.isArray((effectiveProfile as any).knownWords) ? (effectiveProfile as any).knownWords : [];
+
+    // Main user profile data without heavy word arrays to avoid swelling root document
+    const dataToSave: any = {
       ...effectiveProfile,
       friends: Array.isArray(effectiveProfile.friends) ? effectiveProfile.friends : [],
       name: cleanName,
@@ -640,12 +1009,47 @@ export async function saveUserProfileToFirestore(profile: UserProfile): Promise<
       lastSeen: Date.now(),
       lastActive: new Date().toISOString(),
       lastUpdated: new Date().toISOString(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      solvedWords: deleteField(),
+      knownWords: deleteField()
     };
 
     // We await setDoc so we are 100% sure the write is committed to local cache/network
     await setDoc(userDocRef, dataToSave, { merge: true });
     console.log(`Successfully saved user profile to Firestore for UID ${effectiveProfile.id} (${cleanName})`);
+
+    // Requirement 3: Save stats data into dedicated subcollection users/{uid}/stats/summary
+    const statsDocRef = doc(db, 'users', effectiveProfile.id, 'stats', 'summary');
+    const statsPayload: any = {
+      dailyScore: effectiveProfile.dailyScore || 0,
+      score: (effectiveProfile as any).score || effectiveProfile.dailyScore || 0,
+      stats: effectiveProfile.stats || { gamesPlayed: 0, gamesWon: 0, currentStreak: 0, maxStreak: 0, winDistribution: [0, 0, 0, 0, 0, 0] },
+      wordLengthStats: effectiveProfile.wordLengthStats || { "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0 },
+      lastUpdated: new Date().toISOString(),
+      updatedAt: serverTimestamp()
+    };
+
+    // Requirement 2: Use arrayUnion for solved words
+    if (solvedWordsArray.length > 0) {
+      statsPayload.solvedWords = arrayUnion(...solvedWordsArray);
+    }
+    if (knownWordsArray.length > 0) {
+      statsPayload.knownWords = arrayUnion(...knownWordsArray);
+    }
+
+    await setDoc(statsDocRef, statsPayload, { merge: true }).catch((statsErr) => {
+      console.warn('Non-blocking subcollection stats write warning:', statsErr);
+    });
+
+    // Synchronize updated username & avatar across all secondary Firestore collections
+    syncUserProfileAcrossFirestore(effectiveProfile.id, cleanName, effectiveProfile.avatarUrl).catch((err) => {
+      console.warn('Non-blocking syncUserProfileAcrossFirestore error:', err);
+    });
+
+    // Clean up any old obsolete ghost documents belonging to the same deviceId
+    if (effectiveProfile.deviceId) {
+      cleanupGhostUserProfiles(effectiveProfile.deviceId, effectiveProfile.id).catch(() => {});
+    }
   } catch (error) {
     console.error('Failed to save user profile:', error);
     handleFirestoreError(error, OperationType.WRITE, `users/${profile.id}`);
@@ -833,14 +1237,6 @@ export async function sendFriendRequestInFirestore(
     };
 
     await setDoc(reqRef, reqData, { merge: true });
-
-    // Update sender's friends array in Firestore
-    const fromUserRef = doc(db, 'users', fromUser.id);
-    await updateDoc(fromUserRef, {
-      friends: arrayUnion(toUserId)
-    }).catch(async () => {
-      await setDoc(fromUserRef, { friends: [toUserId] }, { merge: true });
-    });
   } catch (error) {
     console.error('Failed to send friend request in Firestore:', error);
     throw error;
@@ -900,7 +1296,7 @@ export async function acceptFriendRequestInFirestore(
 }
 
 /**
- * Removes a friend or rejects a request in Firestore and updates both user documents
+ * Removes a friend or rejects a request in Firestore
  */
 export async function removeFriendInFirestore(
   currentUserId: string,
@@ -912,26 +1308,46 @@ export async function removeFriendInFirestore(
     const reqId2 = `${currentUserId}_${targetUserId}`;
     const ref1 = doc(db, 'friend_requests', reqId1);
     const ref2 = doc(db, 'friend_requests', reqId2);
-
-    const [snap1, snap2] = await Promise.all([getDoc(ref1), getDoc(ref2)]);
     const now = Date.now();
 
-    if (snap1.exists()) {
-      await updateDoc(ref1, { status: 'rejected', updatedAt: now });
-    }
-    if (snap2.exists()) {
-      await updateDoc(ref2, { status: 'rejected', updatedAt: now });
-    }
+    const writePromises: Promise<any>[] = [];
 
+    // Guarantee that both directions are recorded as 'rejected' in friend_requests
+    writePromises.push(setDoc(ref1, {
+      id: reqId1,
+      fromUid: targetUserId,
+      toUid: currentUserId,
+      status: 'rejected',
+      updatedAt: now
+    }, { merge: true }));
+
+    writePromises.push(setDoc(ref2, {
+      id: reqId2,
+      fromUid: currentUserId,
+      toUid: targetUserId,
+      status: 'rejected',
+      updatedAt: now
+    }, { merge: true }));
+
+    // Remove from both users' friends array in Firestore
     const user1Ref = doc(db, 'users', currentUserId);
     const user2Ref = doc(db, 'users', targetUserId);
 
-    await Promise.all([
-      updateDoc(user1Ref, { friends: arrayRemove(targetUserId) }).catch(() => {}),
-      updateDoc(user2Ref, { friends: arrayRemove(currentUserId) }).catch(() => {})
-    ]);
+    writePromises.push(
+      updateDoc(user1Ref, { friends: arrayRemove(targetUserId) }).catch(async () => {
+        // Fallback catch
+      })
+    );
+    writePromises.push(
+      updateDoc(user2Ref, { friends: arrayRemove(currentUserId) }).catch(async () => {
+        // Fallback catch
+      })
+    );
+
+    await Promise.all(writePromises);
   } catch (error) {
     console.error('Failed to remove friend in Firestore:', error);
+    handleFirestoreError(error, OperationType.DELETE, `users/${currentUserId}/friends/${targetUserId}`);
   }
 }
 
@@ -999,6 +1415,9 @@ export async function fetchFriendRequestsAndSync(currentProfile: UserProfile): P
       }
     });
 
+    // Ensure rejected or removed friends are purged from acceptedFriendUids
+    rejectedUids.forEach(uid => acceptedFriendUids.delete(uid));
+
     pendingIncomingUids.delete(myUid);
     acceptedFriendUids.delete(myUid);
 
@@ -1020,10 +1439,12 @@ export async function fetchFriendRequestsAndSync(currentProfile: UserProfile): P
     const updatedFriendsArray = Array.from(acceptedFriendUids);
 
     const currentFriendsSet = new Set(currentProfile.friends || []);
-    let needsSave = false;
-    updatedFriendsArray.forEach(id => {
-      if (!currentFriendsSet.has(id)) needsSave = true;
-    });
+    let needsSave = updatedFriendsArray.length !== currentFriendsSet.size;
+    if (!needsSave) {
+      updatedFriendsArray.forEach(id => {
+        if (!currentFriendsSet.has(id)) needsSave = true;
+      });
+    }
 
     if (needsSave) {
       const userRef = doc(db, 'users', myUid);
@@ -1176,18 +1597,46 @@ export async function searchUserByName(name: string): Promise<UserProfile[]> {
 
     snapshots.forEach(processSnap);
 
+    // Also check direct document lookup by exact term (e.g. if searching by User ID)
+    try {
+      const directDocRef = doc(db, 'users', term);
+      const directSnap = await getDoc(directDocRef);
+      if (directSnap && directSnap.exists()) {
+        const dData = directSnap.data();
+        if (dData) {
+          const uId = directSnap.id;
+          const rName = (dData.name || dData.username || dData.displayName || '').trim();
+          if (uId) {
+            resultMap.set(uId, {
+              ...dData,
+              id: uId,
+              name: rName || 'Oyuncu',
+              username: dData.username || rName,
+              displayName: dData.displayName || rName
+            } as UserProfile);
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore direct ID fetch errors
+    }
+
     const allUsers = Array.from(resultMap.values());
 
-    // Filter client-side: case-insensitive/Turkish-aware match across name, username, or displayName
+    // Filter client-side: case-insensitive/Turkish-aware match across name, username, displayName, or email
     const filtered = allUsers.filter(user => {
       const uName = (user.name || '').trim();
       const uUsername = ((user as any).username || '').trim();
       const uDisplayName = ((user as any).displayName || '').trim();
+      const uEmail = ((user as any).email || '').trim();
+      const uId = (user.id || '').trim();
 
       return (
         matchesSearchTerm(uName, term) ||
         matchesSearchTerm(uUsername, term) ||
-        matchesSearchTerm(uDisplayName, term)
+        matchesSearchTerm(uDisplayName, term) ||
+        matchesSearchTerm(uEmail, term) ||
+        uId === term
       );
     });
 

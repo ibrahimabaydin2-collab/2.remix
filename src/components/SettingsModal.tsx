@@ -37,8 +37,10 @@ import {
   PhoneAuthProvider,
   RecaptchaVerifier,
   linkWithCredential,
-  checkUsernameExists
+  checkUsernameExists,
+  uploadAvatarToStorage
 } from '../lib/firebase';
+import UserAvatar from './UserAvatar';
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 
 export interface AppSettings {
@@ -337,13 +339,26 @@ export default function SettingsModal({
     return true;
   };
 
-  const handleCustomAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (profile?.id) {
+        try {
+          const publicUrl = await uploadAvatarToStorage(profile.id, file);
+          if (publicUrl && publicUrl.startsWith('http')) {
+            setSelectedAvatar(publicUrl);
+            onUpdateProfile(editName.trim() || profile?.name || 'Oyuncu', publicUrl);
+            return;
+          }
+        } catch (err) {
+          console.warn('Storage upload error in SettingsModal:', err);
+        }
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 128;
           const MAX_HEIGHT = 128;
@@ -368,8 +383,12 @@ export default function SettingsModal({
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            setSelectedAvatar(dataUrl);
-            onUpdateProfile(editName.trim() || profile?.name || 'Oyuncu', dataUrl);
+            let finalUrl = dataUrl;
+            if (profile?.id) {
+              finalUrl = await uploadAvatarToStorage(profile.id, dataUrl);
+            }
+            setSelectedAvatar(finalUrl);
+            onUpdateProfile(editName.trim() || profile?.name || 'Oyuncu', finalUrl);
           }
         };
         img.src = reader.result as string;
@@ -492,11 +511,12 @@ export default function SettingsModal({
                       onClick={() => setShowAvatarPresets(!showAvatarPresets)}
                       className="w-16 h-16 rounded-full bg-[#1E2640] border-2 border-amber-200/60 shadow-[0_0_15px_rgba(251,191,36,0.15)] flex items-center justify-center text-3xl overflow-hidden transition-transform duration-200 hover:scale-105 cursor-pointer"
                     >
-                      {selectedAvatar && isImageUrl(selectedAvatar) ? (
-                        <img src={selectedAvatar} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="select-none">{selectedAvatar || '🧠'}</span>
-                      )}
+                      <UserAvatar 
+                        avatarUrl={selectedAvatar} 
+                        name={profile?.name} 
+                        fallbackIcon="🧠" 
+                        textClassName="text-2xl font-bold select-none" 
+                      />
                     </div>
                     <input
                       type="file"

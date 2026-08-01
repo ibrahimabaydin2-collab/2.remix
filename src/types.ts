@@ -66,5 +66,12 @@ export interface NetworkLogEntry {
 
 export function isImageUrl(url?: string | null): boolean {
   if (!url) return false;
-  return url.startsWith('data:image/') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:');
+  const str = url.trim();
+  return (
+    str.startsWith('data:image/') ||
+    str.startsWith('http://') ||
+    str.startsWith('https://') ||
+    str.startsWith('//') ||
+    str.startsWith('blob:')
+  );
 }

@@ -16,8 +16,10 @@ import {
   signInWithPhoneNumber,
   checkUsernameExists,
   createOrMergeProfile,
-  fetchUserProfileByDeviceId
+  fetchUserProfileByDeviceId,
+  uploadAvatarToStorage
 } from '../lib/firebase';
+import UserAvatar from './UserAvatar';
 
 interface AuthScreenProps {
   onAuthComplete: (profile: UserProfile, firebaseUser: any) => void;
@@ -139,13 +141,24 @@ export default function AuthScreen({ onAuthComplete }: AuthScreenProps) {
     ? validatePassword(password) 
     : null;
 
-  const handleCustomAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const currentUid = auth.currentUser?.uid || 'guest';
+      try {
+        const publicUrl = await uploadAvatarToStorage(currentUid, file);
+        if (publicUrl && publicUrl.startsWith('http')) {
+          setSelectedAvatar(publicUrl);
+          return;
+        }
+      } catch (err) {
+        console.warn('Storage upload error in AuthScreen:', err);
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 128;
           const MAX_HEIGHT = 128;
@@ -170,7 +183,11 @@ export default function AuthScreen({ onAuthComplete }: AuthScreenProps) {
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            setSelectedAvatar(dataUrl);
+            let finalUrl = dataUrl;
+            if (currentUid) {
+              finalUrl = await uploadAvatarToStorage(currentUid, dataUrl);
+            }
+            setSelectedAvatar(finalUrl);
           }
         };
         img.src = reader.result as string;
@@ -822,11 +839,7 @@ export default function AuthScreen({ onAuthComplete }: AuthScreenProps) {
 
                   <div className="flex gap-4 items-center bg-[#232B39]/50 p-3 rounded-2xl border border-white/5">
                     <div className="w-14 h-14 rounded-full bg-[#3D4756] border-2 border-amber-200/60 shadow-[0_0_15px_rgba(251,191,36,0.25)] flex items-center justify-center text-2xl overflow-hidden shrink-0">
-                      {selectedAvatar && isImageUrl(selectedAvatar) ? (
-                        <img src={selectedAvatar} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="select-none">{selectedAvatar}</span>
-                      )}
+                      <UserAvatar avatarUrl={selectedAvatar} fallbackIcon="🧠" textClassName="text-2xl font-bold select-none" />
                     </div>
                     <div className="flex-1 overflow-x-auto py-1 flex gap-2 scrollbar-none">
                       {AVATAR_PRESETS.map((preset) => (
@@ -1056,11 +1069,7 @@ export default function AuthScreen({ onAuthComplete }: AuthScreenProps) {
                 <div className="flex gap-4 items-center bg-[#232B39]/50 p-3 rounded-2xl border border-white/5">
                   {/* Preview */}
                   <div className="w-14 h-14 rounded-full bg-[#3D4756] border-2 border-amber-200/60 shadow-[0_0_15px_rgba(251,191,36,0.25)] flex items-center justify-center text-2xl overflow-hidden shrink-0">
-                    {selectedAvatar && isImageUrl(selectedAvatar) ? (
-                      <img src={selectedAvatar} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      <span className="select-none">{selectedAvatar}</span>
-                    )}
+                    <UserAvatar avatarUrl={selectedAvatar} fallbackIcon="🧠" textClassName="text-2xl font-bold select-none" />
                   </div>
 
                   {/* Presets Slider */}
