@@ -1,6 +1,9 @@
 // AdMob Integration Configuration & Helpers
 // Configured according to production AdMob Ad Units
 
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+
 export const ADMOB_CONFIG = {
   // AdMob Application ID
   APP_ID: 'ca-app-pub-1284515268865249~3880684614',
@@ -16,6 +19,31 @@ export const ADMOB_CONFIG = {
   
   // Ödül Miktarı (10 Altın)
   REWARD_GOLD_AMOUNT: 10,
+};
+
+/**
+ * Log AdMob status and ad events to Firestore database for remote diagnostics
+ */
+export const logAdMobEventToFirebase = async (eventName: string, details: any = {}) => {
+  try {
+    const time = Date.now();
+    const userId = auth.currentUser?.uid || 'guest_device';
+    const logId = `admob_${time}_${Math.random().toString(36).substring(2, 6)}`;
+    await setDoc(doc(db, 'admob_logs', logId), {
+      eventName,
+      userId,
+      appId: ADMOB_CONFIG.APP_ID,
+      rewardedAdUnitId: ADMOB_CONFIG.REWARDED_AD_ID,
+      topBannerUnitId: ADMOB_CONFIG.TOP_BANNER_ID,
+      bottomBannerUnitId: ADMOB_CONFIG.BOTTOM_BANNER_ID,
+      publisherId: 'pub-1284515268865249',
+      details,
+      timestamp: new Date().toISOString()
+    }, { merge: true });
+    console.log(`[AdMob Firebase Log] ${eventName}:`, details);
+  } catch (err) {
+    console.warn('[AdMob Firebase Log Warning]:', err);
+  }
 };
 
 // Global state variables for managing AdMob callbacks & async flow
@@ -127,6 +155,7 @@ export const initGlobalAdMobListeners = () => {
   const handleRewarded = () => {
     console.log('[AdMob] Native event: Rewarded -> User earned reward!');
     hasEarnedReward = true;
+    logAdMobEventToFirebase('on_ad_rewarded', { status: 'reward_earned' });
   };
 
   (window as any).onAndroidAdRewarded = handleRewarded;
@@ -147,6 +176,7 @@ export const initGlobalAdMobListeners = () => {
     hasEarnedReward = false;
 
     cleanupAdState();
+    logAdMobEventToFirebase('on_ad_dismissed', { isEarned, alreadyGranted });
 
     if (isEarned && !alreadyGranted && cb) {
       rewardGranted = true;
@@ -176,6 +206,7 @@ export const initGlobalAdMobListeners = () => {
     activeRewardCallback = null;
     activeFailedCallback = null;
     cleanupAdState();
+    logAdMobEventToFirebase('on_ad_failed_to_show', { error: String(err) });
 
     if (failCallback) failCallback(err || 'Reklam gösterilemedi');
   };
@@ -193,6 +224,7 @@ export const initGlobalAdMobListeners = () => {
     activeRewardCallback = null;
     activeFailedCallback = null;
     cleanupAdState();
+    logAdMobEventToFirebase('on_ad_failed_to_load', { error: String(err) });
 
     if (failCallback) failCallback(err || 'Reklam yüklenemedi');
   };
@@ -204,6 +236,7 @@ export const initGlobalAdMobListeners = () => {
   // 5. Native onAdLoaded event (Ad finished buffering)
   const handleLoaded = () => {
     console.log('[AdMob] Native event: AdLoaded');
+    logAdMobEventToFirebase('on_ad_loaded', { explicitRequest: Boolean((window as any).userExplicitAdRequested) });
 
     const hasExplicitRequest =
       (window as any).userExplicitAdRequested === true ||
@@ -265,6 +298,7 @@ export const syncAdMobWithNativeBridge = () => {
   initGlobalAdMobListeners();
 
   (window as any).ADMOB_CONFIG = ADMOB_CONFIG;
+  logAdMobEventToFirebase('init_sync', { hasBridge: !!(window as any).AndroidBridge });
 
   const attemptSync = () => {
     const bridge = (window as any).AndroidBridge;

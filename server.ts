@@ -251,6 +251,12 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// Serve app-ads.txt at domain root for AdMob compliance
+app.get('/app-ads.txt', (req, res) => {
+  res.type('text/plain');
+  res.send('google.com, pub-1284515268865249, DIRECT, f08c47fec0942fa0\n');
+});
+
 // Endpoint to generate a target word across multi-list pools (words_3..words_8)
 app.post('/api/random-word', (req, res) => {
   const { length } = req.body || {};
