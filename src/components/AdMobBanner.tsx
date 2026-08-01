@@ -1,5 +1,5 @@
 import React, { memo, useEffect } from 'react';
-import { ADMOB_CONFIG } from '../utils/admob';
+import { ADMOB_CONFIG, callLoadBannerAd } from '../utils/admob';
 
 interface AdMobBannerProps {
   type: 'top' | 'bottom';
@@ -14,12 +14,8 @@ function AdMobBanner({ type, className = '' }: AdMobBannerProps) {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const bridge = (window as any).AndroidBridge;
-      if (bridge && typeof bridge.loadBannerAd === 'function') {
-        try {
-          bridge.loadBannerAd(type);
-        } catch (e) {
-          console.warn(`Failed to call loadBannerAd(${type}):`, e);
-        }
+      if (bridge) {
+        callLoadBannerAd(bridge, type);
       }
     }
   }, [type]);
@@ -38,4 +34,3 @@ function AdMobBanner({ type, className = '' }: AdMobBannerProps) {
 }
 
 export default memo(AdMobBanner);
-

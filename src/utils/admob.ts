@@ -30,6 +30,17 @@ let hasEarnedReward = false;
 let rewardGranted = false;
 
 /**
+ * Remove visual loading overlay DOM element
+ */
+export const hideLoadingOverlay = () => {
+  if (typeof document === 'undefined') return;
+  const overlay = document.getElementById('admob-loading-overlay');
+  if (overlay && overlay.parentNode) {
+    overlay.parentNode.removeChild(overlay);
+  }
+};
+
+/**
  * Clean up active ad flags, CSS overlay, and safety timers
  */
 export const cleanupAdState = () => {
@@ -48,10 +59,7 @@ export const cleanupAdState = () => {
     sessionStorage.removeItem('user_explicit_ad_requested');
   } catch (e) {}
 
-  const loadingOverlay = document.getElementById('admob-loading-overlay');
-  if (loadingOverlay && loadingOverlay.parentNode) {
-    loadingOverlay.parentNode.removeChild(loadingOverlay);
-  }
+  hideLoadingOverlay();
 
   try {
     (window as any).AndroidBridge?.preventAdLayoutLoops?.();
@@ -59,30 +67,82 @@ export const cleanupAdState = () => {
 };
 
 /**
+ * Helper callers for AndroidBridge native methods (handles both 0 and 1 parameter variations safely)
+ */
+export const callShowRewardedAd = (bridge: any) => {
+  if (!bridge) return;
+  if (typeof bridge.showRewardedAd === 'function') {
+    try {
+      bridge.showRewardedAd(ADMOB_CONFIG.REWARDED_AD_ID);
+    } catch (e) {
+      try {
+        bridge.showRewardedAd();
+      } catch (e2) {
+        console.error('[AdMob] Error calling showRewardedAd on AndroidBridge:', e2);
+      }
+    }
+  }
+};
+
+export const callLoadRewardedAd = (bridge: any) => {
+  if (!bridge) return;
+  if (typeof bridge.loadRewardedAd === 'function') {
+    try {
+      bridge.loadRewardedAd(ADMOB_CONFIG.REWARDED_AD_ID);
+    } catch (e) {
+      try {
+        bridge.loadRewardedAd();
+      } catch (e2) {
+        console.error('[AdMob] Error calling loadRewardedAd on AndroidBridge:', e2);
+      }
+    }
+  }
+};
+
+export const callLoadBannerAd = (bridge: any, position: 'top' | 'bottom') => {
+  if (!bridge) return;
+  if (typeof bridge.loadBannerAd === 'function') {
+    const unitId = position === 'top' ? ADMOB_CONFIG.TOP_BANNER_ID : ADMOB_CONFIG.BOTTOM_BANNER_ID;
+    try {
+      bridge.loadBannerAd(position, unitId);
+    } catch (e) {
+      try {
+        bridge.loadBannerAd(position);
+      } catch (e2) {
+        console.warn(`[AdMob] Error calling loadBannerAd(${position}) on AndroidBridge:`, e2);
+      }
+    }
+  }
+};
+
+/**
  * Initialize global window listeners for native AdMob callbacks.
- * MUST run early and persist across screen navigation (unmount-safe).
+ * Multi-alias listener mapping ensures compatibility with any native Kotlin bridge naming.
  */
 export const initGlobalAdMobListeners = () => {
   if (typeof window === 'undefined' || isAdMobInitialized) return;
   isAdMobInitialized = true;
 
   // 1. Native OnUserEarnedRewardListener event
-  // Triggered BY NATIVE code ONLY when user completely finishes watching video!
-  (window as any).onAndroidAdRewarded = () => {
-    console.log('[AdMob] Native event: onAndroidAdRewarded -> User earned reward!');
+  const handleRewarded = () => {
+    console.log('[AdMob] Native event: Rewarded -> User earned reward!');
     hasEarnedReward = true;
   };
 
+  (window as any).onAndroidAdRewarded = handleRewarded;
+  (window as any).onRewardedAdReward = handleRewarded;
+  (window as any).onRewardedAdRewarded = handleRewarded;
+  (window as any).onAdRewarded = handleRewarded;
+  (window as any).onUserEarnedReward = handleRewarded;
+
   // 2. Native FullScreenContentCallback onAdDismissedFullScreenContent event
-  // Triggered when fullscreen ad activity closes (after reward or when closed prematurely via back button/X)
-  (window as any).onAndroidAdDismissed = async () => {
-    console.log('[AdMob] Native event: onAndroidAdDismissed. hasEarnedReward:', hasEarnedReward);
+  const handleDismissed = async () => {
+    console.log('[AdMob] Native event: Dismissed. hasEarnedReward:', hasEarnedReward);
 
     const cb = activeRewardCallback;
     const isEarned = hasEarnedReward;
     const alreadyGranted = rewardGranted;
 
-    // Reset callbacks and state immediately
     activeRewardCallback = null;
     hasEarnedReward = false;
 
@@ -101,9 +161,15 @@ export const initGlobalAdMobListeners = () => {
     }
   };
 
+  (window as any).onAndroidAdDismissed = handleDismissed;
+  (window as any).onRewardedAdDismissed = handleDismissed;
+  (window as any).onAdDismissed = handleDismissed;
+  (window as any).onAdClosed = handleDismissed;
+  (window as any).onRewardedAdClosed = handleDismissed;
+
   // 3. Native FullScreenContentCallback onAdFailedToShowFullScreenContent event
-  (window as any).onAndroidAdFailedToShow = (err: string) => {
-    console.error('[AdMob] Native event: onAndroidAdFailedToShow:', err);
+  const handleFailedToShow = (err: string) => {
+    console.error('[AdMob] Native event: FailedToShow:', err);
     const failCallback = activeFailedCallback;
     hasEarnedReward = false;
     rewardGranted = false;
@@ -114,9 +180,13 @@ export const initGlobalAdMobListeners = () => {
     if (failCallback) failCallback(err || 'Reklam gösterilemedi');
   };
 
+  (window as any).onAndroidAdFailedToShow = handleFailedToShow;
+  (window as any).onRewardedAdFailedToShow = handleFailedToShow;
+  (window as any).onAdFailedToShow = handleFailedToShow;
+
   // 4. Native onAdFailedToLoad event
-  (window as any).onAndroidAdFailedToLoad = (err: string) => {
-    console.error('[AdMob] Native event: onAndroidAdFailedToLoad:', err);
+  const handleFailedToLoad = (err: string) => {
+    console.error('[AdMob] Native event: FailedToLoad:', err);
     const failCallback = activeFailedCallback;
     hasEarnedReward = false;
     rewardGranted = false;
@@ -127,9 +197,13 @@ export const initGlobalAdMobListeners = () => {
     if (failCallback) failCallback(err || 'Reklam yüklenemedi');
   };
 
+  (window as any).onAndroidAdFailedToLoad = handleFailedToLoad;
+  (window as any).onRewardedAdFailedToLoad = handleFailedToLoad;
+  (window as any).onAdFailedToLoad = handleFailedToLoad;
+
   // 5. Native onAdLoaded event (Ad finished buffering)
-  (window as any).onAndroidAdLoaded = () => {
-    console.log('[AdMob] Native event: onAndroidAdLoaded');
+  const handleLoaded = () => {
+    console.log('[AdMob] Native event: AdLoaded');
 
     const hasExplicitRequest =
       (window as any).userExplicitAdRequested === true ||
@@ -141,33 +215,36 @@ export const initGlobalAdMobListeners = () => {
     }
 
     const bridge = (window as any).AndroidBridge;
-    if (bridge && typeof bridge.showRewardedAd === 'function') {
+    if (bridge) {
       try {
         hasEarnedReward = false;
         rewardGranted = false;
         (window as any).isWatchingAd = true;
+        (window as any).isAdLoading = false;
 
         if (activeStartCallback) activeStartCallback();
 
-        // Hide loading overlay before launching native activity
-        cleanupAdState();
+        hideLoadingOverlay();
+        if (adLoadingSafetyTimer) {
+          clearTimeout(adLoadingSafetyTimer);
+          adLoadingSafetyTimer = null;
+        }
 
         setTimeout(() => {
-          try {
-            bridge.showRewardedAd();
-          } catch (e) {
-            console.error('[AdMob] Exception showing ad after onAndroidAdLoaded:', e);
-            cleanupAdState();
-          }
-        }, 50);
+          callShowRewardedAd(bridge);
+        }, 30);
       } catch (e) {
-        console.error('[AdMob] Exception setup showRewardedAd:', e);
+        console.error('[AdMob] Exception during handleLoaded:', e);
         cleanupAdState();
       }
     } else {
       cleanupAdState();
     }
   };
+
+  (window as any).onAndroidAdLoaded = handleLoaded;
+  (window as any).onRewardedAdLoaded = handleLoaded;
+  (window as any).onAdLoaded = handleLoaded;
 
   // 6. Banner Load / Failure Listeners
   (window as any).onAndroidBannerLoaded = (type: string) => {
@@ -203,13 +280,10 @@ export const syncAdMobWithNativeBridge = () => {
         if (typeof bridge.setRewardedAdUnitId === 'function') {
           bridge.setRewardedAdUnitId(ADMOB_CONFIG.REWARDED_AD_ID);
         }
-        if (typeof bridge.loadRewardedAd === 'function') {
-          bridge.loadRewardedAd();
-        }
-        if (typeof bridge.loadBannerAd === 'function') {
-          bridge.loadBannerAd('top');
-          bridge.loadBannerAd('bottom');
-        }
+
+        callLoadRewardedAd(bridge);
+        callLoadBannerAd(bridge, 'top');
+        callLoadBannerAd(bridge, 'bottom');
       } catch (e) {
         console.warn('Failed to sync AdMob IDs with AndroidBridge:', e);
       }
@@ -217,20 +291,15 @@ export const syncAdMobWithNativeBridge = () => {
   };
 
   attemptSync();
-  setTimeout(attemptSync, 500);
-  setTimeout(attemptSync, 1500);
-  setTimeout(attemptSync, 3000);
+  setTimeout(attemptSync, 300);
+  setTimeout(attemptSync, 1000);
+  setTimeout(attemptSync, 2500);
 };
 
 /**
  * Helper to trigger Rewarded Ad (İzle Kazan) with Strict Native AdMob Execution.
  * Fully integrates with AdMob's OnUserEarnedRewardListener (onAndroidAdRewarded)
  * and FullScreenContentCallback (onAndroidAdDismissed / onAndroidAdFailedToShow).
- *
- * Rules strictly enforced:
- * 1. Reward is granted ONLY if native code triggers onAndroidAdRewarded (OnUserEarnedRewardListener).
- * 2. If user closes ad early or presses back button (onAndroidAdDismissed without onAndroidAdRewarded), NO reward is given.
- * 3. FullScreen presentation is completely handled by native AdMob SDK.
  */
 export const triggerRewardedAdWatch = async (
   onSuccessReward: () => Promise<void> | void,
@@ -239,20 +308,16 @@ export const triggerRewardedAdWatch = async (
 ): Promise<void> => {
   if (typeof window === 'undefined') return;
 
-  // Initialize global bridge listeners if not attached
   initGlobalAdMobListeners();
 
-  // Strictly reset reward state flags for the new ad attempt
   hasEarnedReward = false;
   rewardGranted = false;
 
-  // Prevent duplicate trigger if ad is currently loading or active
   if ((window as any).isWatchingAd || (window as any).isAdLoading) {
     console.warn('[AdMob] Ad trigger ignored: Ad is already loading or watching.');
     return;
   }
 
-  // Bind active callbacks for this ad session
   activeRewardCallback = onSuccessReward;
   activeStartCallback = onAdStart || null;
   activeFailedCallback = onAdFailed || null;
@@ -265,36 +330,32 @@ export const triggerRewardedAdWatch = async (
       sessionStorage.setItem('user_explicit_ad_requested', 'true');
     } catch (e) {}
 
-    // Check if rewarded ad is already cached/buffered in native AdMob
-    const isLoaded = typeof bridge.isRewardedAdLoaded === 'function' && bridge.isRewardedAdLoaded();
+    let isLoaded = false;
+    if (typeof bridge.isRewardedAdLoaded === 'function') {
+      try {
+        isLoaded = bridge.isRewardedAdLoaded();
+      } catch (e) {
+        console.warn('[AdMob] Error checking isRewardedAdLoaded:', e);
+      }
+    }
 
     if (isLoaded) {
       console.log('[AdMob] Pre-loaded ad available. Launching native fullscreen ad presentation...');
       (window as any).isWatchingAd = true;
-      
       if (onAdStart) onAdStart();
 
       setTimeout(() => {
-        try {
-          bridge.showRewardedAd();
-        } catch (err) {
-          console.error('[AdMob] Exception during native showRewardedAd:', err);
-          cleanupAdState();
-          if (onAdFailed) onAdFailed('Reklam başlatılamadı');
-        }
-      }, 50);
+        callShowRewardedAd(bridge);
+      }, 30);
     } else {
       console.log('[AdMob] Ad not pre-loaded. Initiating loadRewardedAd request...');
       (window as any).isAdLoading = true;
       showLoadingOverlay();
 
       setTimeout(() => {
-        if (typeof bridge.loadRewardedAd === 'function') {
-          bridge.loadRewardedAd();
-        }
-      }, 50);
+        callLoadRewardedAd(bridge);
+      }, 30);
 
-      // Safety timeout if native load hangs
       adLoadingSafetyTimer = setTimeout(() => {
         if ((window as any).isAdLoading) {
           console.warn('[AdMob] Ad load safety timeout reached (10s).');
@@ -306,7 +367,7 @@ export const triggerRewardedAdWatch = async (
       }, 10000);
     }
   } else {
-    // Browser / Dev Preview Mode fallback
+    // Web Preview mode (Browser testing)
     console.log('[AdMob] Web Preview mode detected (No AndroidBridge). Executing reward callback directly for testing.');
     if (onAdStart) onAdStart();
     hasEarnedReward = true;
