@@ -133,7 +133,6 @@ export default function WelcomeScreen({
   // Rewarded Ad and Daily Claim States
   const adRequestActiveRef = useRef<boolean>(false);
   const [isWatchingAd, setIsWatchingAd] = useState<boolean>(false);
-  const [adCountdown, setAdCountdown] = useState<number>(5);
   const [showAdSuccess, setShowAdSuccess] = useState<boolean>(false);
   const [isAdLoading, setIsAdLoading] = useState<boolean>(false);
   
@@ -1676,48 +1675,7 @@ export default function WelcomeScreen({
         />
       )}
 
-      {/* 📺 AD-WATCHING OVERLAY */}
-      {isWatchingAd && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in pointer-events-auto">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative">
-            <div className="absolute inset-0 rounded-3xl border border-dashed border-amber-500/20 animate-spin [animation-duration:40s]" />
-            <span className="text-4xl block mb-4 animate-bounce">📺</span>
-            <h3 className="text-[#FAF6E9] font-serif text-lg sm:text-xl font-bold uppercase tracking-wide leading-tight mb-2">
-              Ödüllü Reklam Oynatılıyor
-            </h3>
-            <p className="text-gray-400 text-xs leading-relaxed mb-6">
-              Lütfen bekleyin, altın ödülünüz yükleniyor. Bu ekranı kapatmayınız...
-            </p>
 
-            <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 border border-white/5 mb-4">
-              <div 
-                style={{ width: `${(adCountdown / 5) * 100}%` }}
-                className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(245,158,11,0.5)]"
-              />
-            </div>
-
-            <div className="text-xs font-black text-amber-400 font-mono tracking-widest leading-none">
-              REKLAM SÜRESİ: {adCountdown} saniye
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ⏳ AD-LOADING OVERLAY */}
-      {isAdLoading && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in pointer-events-auto">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative">
-            <div className="absolute inset-0 rounded-3xl border border-dashed border-amber-500/20 animate-spin [animation-duration:15s]" />
-            <div className="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <h3 className="text-[#FAF6E9] font-serif text-lg sm:text-xl font-bold uppercase tracking-wide leading-tight mb-2">
-              Reklam Yükleniyor...
-            </h3>
-            <p className="text-gray-400 text-xs leading-relaxed">
-              AdMob reklamı güvenli şekilde hazırlanıyor. Lütfen bekleyin...
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* 🎉 AD SUCCESS CELEBRATION POPUP */}
       {showAdSuccess && (

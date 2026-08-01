@@ -26,6 +26,10 @@ let activeFailedCallback: ((reason: string) => void) | null = null;
 let adLoadingSafetyTimer: any = null;
 let historyPopListenerAttached = false;
 
+// Flags for strict OnUserEarnedRewardListener & FullScreenContentCallback synchronization
+let hasEarnedReward = false;
+let rewardGranted = false;
+
 /**
  * Clean up active ad flags, CSS overlay, safety timers, and history guard
  */
@@ -52,11 +56,6 @@ export const cleanupAdState = () => {
     loadingOverlay.parentNode.removeChild(loadingOverlay);
   }
 
-  const webSimOverlay = document.getElementById('web-ad-simulator-overlay');
-  if (webSimOverlay && webSimOverlay.parentNode) {
-    webSimOverlay.parentNode.removeChild(webSimOverlay);
-  }
-
   try {
     (window as any).AndroidBridge?.preventAdLayoutLoops?.();
   } catch (e) {}
@@ -70,33 +69,47 @@ export const initGlobalAdMobListeners = () => {
   if (typeof window === 'undefined' || isAdMobInitialized) return;
   isAdMobInitialized = true;
 
-  // 1. Rewarded Ad Earned Callback
-  (window as any).onAndroidAdRewarded = async () => {
-    console.log('[AdMob] Native event: onAndroidAdRewarded');
-    const callback = activeRewardCallback;
+  // 1. Native OnUserEarnedRewardListener event
+  // Triggered BY NATIVE code ONLY when user completely finishes watching video!
+  (window as any).onAndroidAdRewarded = () => {
+    console.log('[AdMob] Native event: onAndroidAdRewarded -> User earned reward!');
+    hasEarnedReward = true;
+  };
+
+  // 2. Native FullScreenContentCallback onAdDismissedFullScreenContent event
+  // Triggered when fullscreen ad activity closes (after reward or when closed prematurely via back button/X)
+  (window as any).onAndroidAdDismissed = async () => {
+    console.log('[AdMob] Native event: onAndroidAdDismissed. hasEarnedReward:', hasEarnedReward);
+
+    const cb = activeRewardCallback;
+    const isEarned = hasEarnedReward;
+    const alreadyGranted = rewardGranted;
+
+    // Reset callbacks and state immediately
     activeRewardCallback = null;
+    hasEarnedReward = false;
+
     cleanupAdState();
 
-    if (callback) {
+    if (isEarned && !alreadyGranted && cb) {
+      rewardGranted = true;
+      console.log('[AdMob] Awarding gold reward to user!');
       try {
-        await callback();
+        await cb();
       } catch (err) {
         console.error('[AdMob] Error in reward callback:', err);
       }
+    } else {
+      console.log('[AdMob] Ad dismissed without completing reward or reward already processed.');
     }
   };
 
-  // 2. Rewarded / Interstitial Ad Dismissed / Closed Callback
-  (window as any).onAndroidAdDismissed = () => {
-    console.log('[AdMob] Native event: onAndroidAdDismissed');
-    activeRewardCallback = null;
-    cleanupAdState();
-  };
-
-  // 3. Ad Failed to Show (Runtime display error)
+  // 3. Native FullScreenContentCallback onAdFailedToShowFullScreenContent event
   (window as any).onAndroidAdFailedToShow = (err: string) => {
     console.error('[AdMob] Native event: onAndroidAdFailedToShow:', err);
     const failCallback = activeFailedCallback;
+    hasEarnedReward = false;
+    rewardGranted = false;
     activeRewardCallback = null;
     activeFailedCallback = null;
     cleanupAdState();
@@ -104,10 +117,12 @@ export const initGlobalAdMobListeners = () => {
     if (failCallback) failCallback(err || 'Reklam gösterilemedi');
   };
 
-  // 4. Ad Failed to Load (Network / No Fill error)
+  // 4. Native onAdFailedToLoad event
   (window as any).onAndroidAdFailedToLoad = (err: string) => {
     console.error('[AdMob] Native event: onAndroidAdFailedToLoad:', err);
     const failCallback = activeFailedCallback;
+    hasEarnedReward = false;
+    rewardGranted = false;
     activeRewardCallback = null;
     activeFailedCallback = null;
     cleanupAdState();
@@ -115,7 +130,7 @@ export const initGlobalAdMobListeners = () => {
     if (failCallback) failCallback(err || 'Reklam yüklenemedi');
   };
 
-  // 5. Ad Loaded Callback (Async flow requirement: ONLY show when loaded!)
+  // 5. Native onAdLoaded event (Ad finished buffering)
   (window as any).onAndroidAdLoaded = () => {
     console.log('[AdMob] Native event: onAndroidAdLoaded');
 
@@ -124,17 +139,30 @@ export const initGlobalAdMobListeners = () => {
       (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user_explicit_ad_requested') === 'true');
 
     if (!hasExplicitRequest) {
-      console.log('[AdMob] Ad loaded in background. No explicit request active.');
+      console.log('[AdMob] Ad loaded in background.');
       return;
     }
 
-    // Now that the ad is 100% loaded, trigger showRewardedAd safely!
     const bridge = (window as any).AndroidBridge;
     if (bridge && typeof bridge.showRewardedAd === 'function') {
       try {
+        hasEarnedReward = false;
+        rewardGranted = false;
         (window as any).isWatchingAd = true;
         document.body.classList.add('ad-active');
+
         if (activeStartCallback) activeStartCallback();
+
+        // Hide loading overlay before launching native activity
+        const loadingOverlay = document.getElementById('admob-loading-overlay');
+        if (loadingOverlay && loadingOverlay.parentNode) {
+          loadingOverlay.parentNode.removeChild(loadingOverlay);
+        }
+        if (adLoadingSafetyTimer) {
+          clearTimeout(adLoadingSafetyTimer);
+          adLoadingSafetyTimer = null;
+        }
+
         bridge.showRewardedAd();
       } catch (e) {
         console.error('[AdMob] Exception showing ad after onAndroidAdLoaded:', e);
@@ -159,7 +187,8 @@ export const initGlobalAdMobListeners = () => {
     historyPopListenerAttached = true;
     window.addEventListener('popstate', () => {
       if ((window as any).isWatchingAd || (window as any).isAdLoading) {
-        console.log('[AdMob] Back button pressed during ad playback. Cleaning up ad state.');
+        console.log('[AdMob] Back button pressed during ad playback. Cleaning up ad state without reward.');
+        hasEarnedReward = false;
         cleanupAdState();
       }
     });
@@ -174,7 +203,6 @@ export const syncAdMobWithNativeBridge = () => {
 
   initGlobalAdMobListeners();
 
-  // Store in global window state
   (window as any).ADMOB_CONFIG = ADMOB_CONFIG;
 
   const attemptSync = () => {
@@ -191,11 +219,9 @@ export const syncAdMobWithNativeBridge = () => {
         if (typeof bridge.setRewardedAdUnitId === 'function') {
           bridge.setRewardedAdUnitId(ADMOB_CONFIG.REWARDED_AD_ID);
         }
-        // Preload rewarded ad asynchronously
         if (typeof bridge.loadRewardedAd === 'function') {
           bridge.loadRewardedAd();
         }
-        // Load banner ads if bridge methods exist
         if (typeof bridge.loadBannerAd === 'function') {
           bridge.loadBannerAd('top');
           bridge.loadBannerAd('bottom');
@@ -206,17 +232,14 @@ export const syncAdMobWithNativeBridge = () => {
     }
   };
 
-  // Immediate sync
   attemptSync();
-
-  // Retries in case bridge is attached late by WebView
   setTimeout(attemptSync, 500);
   setTimeout(attemptSync, 1500);
   setTimeout(attemptSync, 3000);
 };
 
 /**
- * Helper to trigger Rewarded Ad (İzle Kazan) with Async Safety & Strict Load Validation
+ * Helper to trigger Rewarded Ad (İzle Kazan) with Strict Native AdMob Execution
  */
 export const triggerRewardedAdWatch = async (
   onSuccessReward: () => Promise<void> | void,
@@ -226,6 +249,10 @@ export const triggerRewardedAdWatch = async (
   if (typeof window === 'undefined') return;
 
   initGlobalAdMobListeners();
+
+  // Reset state flags
+  hasEarnedReward = false;
+  rewardGranted = false;
 
   // Prevent double triggers
   if ((window as any).isWatchingAd || (window as any).isAdLoading) {
@@ -245,56 +272,55 @@ export const triggerRewardedAdWatch = async (
       sessionStorage.setItem('user_explicit_ad_requested', 'true');
     } catch (e) {}
 
-    // Push temporary history state for back-button safety
-    try {
-      window.history.pushState({ admobWatch: true }, '');
-    } catch (e) {}
-
-    // 1. Check if the ad is ALREADY fully loaded
+    // Check if the ad is ALREADY fully loaded in native AdMob cache
     const isLoaded = typeof bridge.isRewardedAdLoaded === 'function' && bridge.isRewardedAdLoaded();
 
     if (isLoaded) {
-      console.log('[AdMob] Ad is already loaded. Showing immediately.');
+      console.log('[AdMob] Ad is pre-loaded. Launching native fullscreen ad immediately.');
       (window as any).isWatchingAd = true;
       document.body.classList.add('ad-active');
       if (onAdStart) onAdStart();
       try {
         bridge.showRewardedAd();
       } catch (err) {
-        console.error('[AdMob] Error showing loaded ad:', err);
+        console.error('[AdMob] Error launching showRewardedAd:', err);
         cleanupAdState();
         if (onAdFailed) onAdFailed('Reklam başlatılamadı');
       }
     } else {
-      // 2. Ad is NOT loaded yet. Trigger async load and show loading UI!
-      console.log('[AdMob] Ad not loaded. Triggering loadRewardedAd with async loading state.');
+      console.log('[AdMob] Ad not loaded. Triggering loadRewardedAd...');
       (window as any).isAdLoading = true;
-
-      // Show clean visual loading indicator
       showLoadingOverlay();
 
-      // Trigger native load
       if (typeof bridge.loadRewardedAd === 'function') {
         bridge.loadRewardedAd();
       }
 
-      // Safety timeout (10 seconds max): If ad fails to load within 10s, cancel gracefully
       adLoadingSafetyTimer = setTimeout(() => {
         if ((window as any).isAdLoading) {
-          console.warn('[AdMob] Ad load safety timeout reached (10s). Canceling loading.');
+          console.warn('[AdMob] Ad load safety timeout reached (10s).');
           cleanupAdState();
           if (onAdFailed) {
             onAdFailed('Reklam yüklenirken zaman aşımına uğradı. Lütfen tekrar deneyin.');
-          } else {
-            alert('Reklam yüklenirken zaman aşımına uğradı. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.');
           }
         }
       }, 10000);
     }
   } else {
-    // 3. Web / Dev Fallback Simulator Mode
+    // Browser / Dev Preview Mode without AndroidBridge
+    console.log('[AdMob] Web Preview mode detected (No AndroidBridge). Executing reward callback directly.');
     if (onAdStart) onAdStart();
-    runWebAdSimulator(onSuccessReward);
+    hasEarnedReward = true;
+    if (activeRewardCallback) {
+      const cb = activeRewardCallback;
+      activeRewardCallback = null;
+      try {
+        await cb();
+      } catch (e) {
+        console.error('[AdMob] Error executing web reward callback:', e);
+      }
+    }
+    cleanupAdState();
   }
 };
 
@@ -310,10 +336,10 @@ const showLoadingOverlay = () => {
   const overlay = document.createElement('div');
   overlay.id = 'admob-loading-overlay';
   overlay.className =
-    'fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn';
+    'fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn';
   overlay.innerHTML = `
     <div class="bg-[#161D2B] border border-amber-500/40 rounded-3xl p-6 max-w-xs w-full shadow-2xl flex flex-col items-center space-y-4">
-      <div class="w-12 h-12 rounded-full border-4 border-amber-400 border-t-transparent animate-spin"></div>
+      <div class="w-10 h-10 rounded-full border-4 border-amber-400 border-t-transparent animate-spin"></div>
       <div>
         <h4 class="text-sm font-black text-white">Reklam Yükleniyor...</h4>
         <p class="text-xs text-slate-300 mt-1">Lütfen bekleyin, video hazırlanıyor.</p>
@@ -333,72 +359,3 @@ const showLoadingOverlay = () => {
     };
   }
 };
-
-/**
- * Web Simulator Mode for local dev & web preview testing
- */
-const runWebAdSimulator = (onSuccessReward: () => Promise<void> | void) => {
-  (window as any).isWatchingAd = true;
-  document.body.classList.add('ad-active');
-
-  let countdown = 5;
-  const overlay = document.createElement('div');
-  overlay.id = 'web-ad-simulator-overlay';
-  overlay.className =
-    'fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-white text-center animate-fadeIn';
-
-  overlay.innerHTML = `
-    <div class="bg-[#161D2B] border border-amber-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 relative">
-      <div class="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 mx-auto flex items-center justify-center text-amber-400 text-2xl font-bold animate-pulse">
-        📺
-      </div>
-      <div>
-        <span class="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full font-mono">
-          ÖDÜLLÜ REKLAM (WEB TEST)
-        </span>
-        <h3 class="text-base font-black text-white mt-2">
-          Reklam İzleniyor...
-        </h3>
-        <p class="text-xs text-slate-300 mt-1">
-          Tamamlandığında <span class="text-amber-400 font-bold">+${ADMOB_CONFIG.REWARD_GOLD_AMOUNT} Altın</span> kazanacaksınız!
-        </p>
-      </div>
-      <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
-        <div id="web-ad-progress-bar" class="bg-gradient-to-r from-amber-400 to-yellow-500 h-full transition-all duration-1000 ease-linear" style="width: 0%"></div>
-      </div>
-      <div id="web-ad-timer-text" class="text-sm font-mono font-black text-amber-300">
-        Kalan Süre: 5s
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  const interval = setInterval(async () => {
-    countdown -= 1;
-    const progressBar = document.getElementById('web-ad-progress-bar');
-    const timerText = document.getElementById('web-ad-timer-text');
-
-    if (progressBar) {
-      progressBar.style.width = `${((5 - countdown) / 5) * 100}%`;
-    }
-    if (timerText) {
-      timerText.innerText = `Kalan Süre: ${countdown}s`;
-    }
-
-    if (countdown <= 0) {
-      clearInterval(interval);
-      const simOverlay = document.getElementById('web-ad-simulator-overlay');
-      if (simOverlay && simOverlay.parentNode) {
-        simOverlay.parentNode.removeChild(simOverlay);
-      }
-      cleanupAdState();
-      try {
-        await onSuccessReward();
-      } catch (e) {
-        console.error('Error executing reward callback:', e);
-      }
-    }
-  }, 1000);
-};
-
