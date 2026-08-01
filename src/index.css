@@ -34,32 +34,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Force hardware composition layer during ad activity or in native hybrid mode */
-.android-hybrid *,
-body.ad-active * {
+/* Force hardware composition layer in native hybrid mode */
+.android-hybrid * {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-}
-
-/* Disable expensive backdrop-blur on mobile and active ad states to eliminate stutter and frame drops */
-@media (max-width: 768px) {
-  .backdrop-blur-md,
-  .backdrop-blur-lg,
-  .backdrop-blur-xl,
-  .backdrop-blur-2xl {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background-color: rgba(15, 23, 42, 0.95) !important;
-  }
-}
-
-body.ad-active .backdrop-blur-md,
-body.ad-active .backdrop-blur-lg,
-body.ad-active .backdrop-blur-xl,
-body.ad-active .backdrop-blur-2xl {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  background-color: rgba(15, 23, 42, 0.98) !important;
 }
 
 /* Ensure smooth font rendering and zero extra margin for webview alignment */

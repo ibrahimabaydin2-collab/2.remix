@@ -330,9 +330,6 @@ export default function WelcomeScreen({
   }, []);
 
   const startRewardedAdWatch = () => {
-    if (isAdLoading || isWatchingAd) return;
-    setIsAdLoading(true);
-
     triggerRewardedAdWatch(
       async () => {
         setIsAdLoading(false);

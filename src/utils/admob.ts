@@ -24,14 +24,13 @@ let activeRewardCallback: (() => Promise<void> | void) | null = null;
 let activeStartCallback: (() => void) | null = null;
 let activeFailedCallback: ((reason: string) => void) | null = null;
 let adLoadingSafetyTimer: any = null;
-let historyPopListenerAttached = false;
 
 // Flags for strict OnUserEarnedRewardListener & FullScreenContentCallback synchronization
 let hasEarnedReward = false;
 let rewardGranted = false;
 
 /**
- * Clean up active ad flags, CSS overlay, safety timers, and history guard
+ * Clean up active ad flags, CSS overlay, and safety timers
  */
 export const cleanupAdState = () => {
   if (typeof window === 'undefined') return;
@@ -48,8 +47,6 @@ export const cleanupAdState = () => {
   try {
     sessionStorage.removeItem('user_explicit_ad_requested');
   } catch (e) {}
-
-  document.body.classList.remove('ad-active');
 
   const loadingOverlay = document.getElementById('admob-loading-overlay');
   if (loadingOverlay && loadingOverlay.parentNode) {
@@ -149,19 +146,11 @@ export const initGlobalAdMobListeners = () => {
         hasEarnedReward = false;
         rewardGranted = false;
         (window as any).isWatchingAd = true;
-        document.body.classList.add('ad-active');
 
         if (activeStartCallback) activeStartCallback();
 
         // Hide loading overlay before launching native activity
-        const loadingOverlay = document.getElementById('admob-loading-overlay');
-        if (loadingOverlay && loadingOverlay.parentNode) {
-          loadingOverlay.parentNode.removeChild(loadingOverlay);
-        }
-        if (adLoadingSafetyTimer) {
-          clearTimeout(adLoadingSafetyTimer);
-          adLoadingSafetyTimer = null;
-        }
+        cleanupAdState();
 
         bridge.showRewardedAd();
       } catch (e) {
@@ -181,18 +170,6 @@ export const initGlobalAdMobListeners = () => {
   (window as any).onAndroidBannerFailedToLoad = (type: string, err: string) => {
     console.warn(`[AdMob] Banner failed to load (${type}):`, err);
   };
-
-  // Attach Hardware Back Button Guard for active ad playback
-  if (!historyPopListenerAttached) {
-    historyPopListenerAttached = true;
-    window.addEventListener('popstate', () => {
-      if ((window as any).isWatchingAd || (window as any).isAdLoading) {
-        console.log('[AdMob] Back button pressed during ad playback. Cleaning up ad state without reward.');
-        hasEarnedReward = false;
-        cleanupAdState();
-      }
-    });
-  }
 };
 
 /**
@@ -278,7 +255,6 @@ export const triggerRewardedAdWatch = async (
     if (isLoaded) {
       console.log('[AdMob] Ad is pre-loaded. Launching native fullscreen ad immediately.');
       (window as any).isWatchingAd = true;
-      document.body.classList.add('ad-active');
       if (onAdStart) onAdStart();
       try {
         bridge.showRewardedAd();
@@ -336,7 +312,7 @@ const showLoadingOverlay = () => {
   const overlay = document.createElement('div');
   overlay.id = 'admob-loading-overlay';
   overlay.className =
-    'fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn';
+    'fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn';
   overlay.innerHTML = `
     <div class="bg-[#161D2B] border border-amber-500/40 rounded-3xl p-6 max-w-xs w-full shadow-2xl flex flex-col items-center space-y-4">
       <div class="w-10 h-10 rounded-full border-4 border-amber-400 border-t-transparent animate-spin"></div>
