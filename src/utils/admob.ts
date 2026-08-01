@@ -12,7 +12,7 @@ export const ADMOB_CONFIG = {
   TOP_BANNER_ID: 'ca-app-pub-1284515268865249/7823986409',
   
   // İzle Kazan (Ödüllü / Rewarded Ad Format)
-  REWARDED_AD_ID: 'ca-app-pub-1284515268865249/8945496387',
+  REWARDED_AD_ID: 'ca-app-pub-1284515268865249/8781794522',
   
   // Ödül Miktarı (10 Altın)
   REWARD_GOLD_AMOUNT: 10,
