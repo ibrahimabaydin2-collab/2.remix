@@ -24,6 +24,7 @@ import {
   uploadAvatarToStorage
 } from '../lib/firebase';
 import { suspendAudioContext, resumeAudioContext } from '../utils/soundEffects';
+import { initGlobalAdMobListeners, triggerRewardedAdWatch } from '../utils/admob';
 import GoldWallet from './GoldWallet';
 import FriendsModal from './FriendsModal';
 
@@ -326,148 +327,33 @@ export default function WelcomeScreen({
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      (window as any).onAndroidAdRewarded = () => {
-        clearAdRequestFlags();
-        setIsWatchingAd(false);
-        setIsAdLoading(false);
-        resumeAudioContext();
-        document.body.classList.remove('ad-active');
-        try { (window as any).AndroidBridge?.preventAdLayoutLoops?.(); } catch (e) {}
-        onRewardRef.current?.();
-        setShowAdSuccess(true);
-      };
-
-      (window as any).onAndroidAdDismissed = () => {
-        clearAdRequestFlags();
-        setIsWatchingAd(false);
-        setIsAdLoading(false);
-        resumeAudioContext();
-        document.body.classList.remove('ad-active');
-        try { (window as any).AndroidBridge?.preventAdLayoutLoops?.(); } catch (e) {}
-      };
-
-      (window as any).onAndroidAdFailedToShow = (err: string) => {
-        clearAdRequestFlags();
-        setIsWatchingAd(false);
-        setIsAdLoading(false);
-        resumeAudioContext();
-        document.body.classList.remove('ad-active');
-        try { (window as any).AndroidBridge?.preventAdLayoutLoops?.(); } catch (e) {}
-        alert("Reklam gösterilemedi: " + err);
-      };
-
-      (window as any).onAndroidAdFailedToLoad = (err: string) => {
-        clearAdRequestFlags();
-        setIsAdLoading(false);
-        resumeAudioContext();
-        document.body.classList.remove('ad-active');
-        try { (window as any).AndroidBridge?.preventAdLayoutLoops?.(); } catch (e) {}
-        alert("Reklam yüklenemedi: " + err);
-      };
-
-      (window as any).onAndroidAdLoaded = () => {
-        const hasExplicitRequest = adRequestActiveRef.current || 
-          (typeof window !== 'undefined' && (window as any).userExplicitAdRequested === true) ||
-          (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user_explicit_ad_requested') === 'true');
-
-        if (!hasExplicitRequest) {
-          console.log("onAndroidAdLoaded triggered, but no active user request. Skipping auto-show.");
-          clearAdRequestFlags();
-          setIsAdLoading(false);
-          resumeAudioContext();
-          document.body.classList.remove('ad-active');
-          return;
-        }
-
-        // Reset all flags first to prevent any back-to-back triggers!
-        clearAdRequestFlags();
-        setIsAdLoading(false);
-        suspendAudioContext();
-        document.body.classList.add('ad-active');
-        try {
-          if ((window as any).AndroidBridge && (window as any).AndroidBridge.showRewardedAd) {
-            (window as any).AndroidBridge.showRewardedAd();
-          }
-        } catch (e) {
-          console.error("Error showing ad after load:", e);
-          resumeAudioContext();
-          document.body.classList.remove('ad-active');
-        }
-      };
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        delete (window as any).onAndroidAdRewarded;
-        delete (window as any).onAndroidAdDismissed;
-        delete (window as any).onAndroidAdFailedToShow;
-        delete (window as any).onAndroidAdFailedToLoad;
-        delete (window as any).onAndroidAdLoaded;
-      }
-    };
+    initGlobalAdMobListeners();
   }, []);
 
   const startRewardedAdWatch = () => {
-    if (isAdLoading || isWatchingAd) return; // Prevent double-clicking
-    if (typeof window !== 'undefined' && (window as any).AndroidBridge) {
-      adRequestActiveRef.current = true; // Set active request flag
-      (window as any).userExplicitAdRequested = true;
-      try {
-        sessionStorage.setItem('user_explicit_ad_requested', 'true');
-      } catch (e) {}
-      setIsAdLoading(true);
-      try {
-        if ((window as any).AndroidBridge.isRewardedAdLoaded && (window as any).AndroidBridge.isRewardedAdLoaded()) {
-          if ((window as any).AndroidBridge.showRewardedAd) {
-            clearAdRequestFlags(); // Will be shown immediately, reset the flag
-            suspendAudioContext();
-            document.body.classList.add('ad-active');
-            (window as any).AndroidBridge.showRewardedAd();
-          }
-        } else {
-          if ((window as any).AndroidBridge.loadRewardedAd) {
-            (window as any).AndroidBridge.loadRewardedAd();
-          }
-          // Fallback timer: if it doesn't load in 2.5 seconds, try showing or notify
-          setTimeout(() => {
-            const hasExplicitRequest = adRequestActiveRef.current || 
-              (typeof window !== 'undefined' && (window as any).userExplicitAdRequested === true) ||
-              (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user_explicit_ad_requested') === 'true');
+    if (isAdLoading || isWatchingAd) return;
+    setIsAdLoading(true);
 
-            if (hasExplicitRequest && (window as any).AndroidBridge && (window as any).AndroidBridge.showRewardedAd) {
-              clearAdRequestFlags(); // Reset flag before showing
-              setIsAdLoading(false);
-              (window as any).AndroidBridge.showRewardedAd();
-            }
-          }, 2500);
-        }
-      } catch (e) {
-        console.error("Error triggering native ad:", e);
-        adRequestActiveRef.current = false;
+    triggerRewardedAdWatch(
+      async () => {
         setIsAdLoading(false);
-      }
-    } else {
-      // Browser simulation
-      setIsWatchingAd(true);
-      setAdCountdown(5);
-
-      let currentCount = 5;
-      const interval = setInterval(() => {
-        currentCount -= 1;
-        if (currentCount <= 0) {
-          clearInterval(interval);
-          setAdCountdown(0);
-          setIsWatchingAd(false);
-          setShowAdSuccess(true);
-          if (onRewardRef.current) {
-            onRewardRef.current();
-          }
-        } else {
-          setAdCountdown(currentCount);
+        setIsWatchingAd(false);
+        setShowAdSuccess(true);
+        if (onRewardRef.current) {
+          await onRewardRef.current();
         }
-      }, 1000);
-    }
+      },
+      () => {
+        setIsAdLoading(false);
+        setIsWatchingAd(true);
+      },
+      (reason) => {
+        setIsAdLoading(false);
+        setIsWatchingAd(false);
+        if (showToast) showToast(reason, 'error');
+        else alert(reason);
+      }
+    );
   };
 
   useEffect(() => {

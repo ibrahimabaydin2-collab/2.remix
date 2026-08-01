@@ -6352,7 +6352,11 @@ export default function App() {
                       <GoldWallet gold={profile?.gold !== undefined ? profile.gold : 20} />
                       <button
                         onClick={() => {
-                          triggerRewardedAdWatch(handleWatchRewardedAdReward);
+                          triggerRewardedAdWatch(
+                            handleWatchRewardedAdReward,
+                            undefined,
+                            (err) => showToast(err, 'error')
+                          );
                         }}
                         className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 hover:from-amber-400/30 hover:to-yellow-500/30 active:scale-95 border border-amber-400/40 text-amber-300 px-2.5 py-1 rounded-full transition cursor-pointer shadow-sm text-xs font-bold"
                         title="Reklam İzleyerek +10 Altın Kazan"

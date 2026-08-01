@@ -24,7 +24,8 @@
 
 /* WebView & Native Interface Layout Rules */
 .android-hybrid #top-ad-placeholder,
-.android-hybrid #bottom-ad-placeholder {
+.android-hybrid #bottom-ad-placeholder,
+.android-hybrid .android-hybrid-hide {
   display: none !important;
 }
 
