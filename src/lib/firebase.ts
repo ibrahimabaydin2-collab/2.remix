@@ -490,7 +490,6 @@ export function subscribeToUserProfile(
     const combinedProfile = createOrMergeProfile(userData, {
       id: uid,
       dailyScore: typeof statsData?.dailyScore === 'number' ? statsData.dailyScore : userData.dailyScore,
-      score: typeof statsData?.score === 'number' ? statsData.score : (userData as any).score,
       stats: statsData?.stats ? { ...userData.stats, ...statsData.stats } : userData.stats,
       wordLengthStats: statsData?.wordLengthStats ? { ...userData.wordLengthStats, ...statsData.wordLengthStats } : userData.wordLengthStats,
       ...(statsData?.solvedWords ? { solvedWords: statsData.solvedWords } : {}),
@@ -609,7 +608,6 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
       return createOrMergeProfile(data, {
         id: data.id || userSnap.id,
         dailyScore: typeof statsData.dailyScore === 'number' ? statsData.dailyScore : data.dailyScore,
-        score: typeof statsData.score === 'number' ? statsData.score : (data as any).score,
         stats: statsData.stats ? { ...data.stats, ...statsData.stats } : data.stats,
         wordLengthStats: statsData.wordLengthStats ? { ...data.wordLengthStats, ...statsData.wordLengthStats } : data.wordLengthStats,
         ...(statsData.solvedWords ? { solvedWords: statsData.solvedWords } : {}),
@@ -1607,13 +1605,10 @@ export async function searchUserByName(name: string): Promise<UserProfile[]> {
           const uId = directSnap.id;
           const rName = (dData.name || dData.username || dData.displayName || '').trim();
           if (uId) {
-            resultMap.set(uId, {
-              ...dData,
+            resultMap.set(uId, createOrMergeProfile(dData as UserProfile, {
               id: uId,
-              name: rName || 'Oyuncu',
-              username: dData.username || rName,
-              displayName: dData.displayName || rName
-            } as UserProfile);
+              name: rName || 'Oyuncu'
+            }));
           }
         }
       }
