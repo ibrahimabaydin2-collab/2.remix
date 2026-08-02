@@ -23,28 +23,29 @@ export const ADMOB_CONFIG = {
 };
 
 /**
- * Log AdMob status and ad events to Firestore database for remote diagnostics
+ * Log AdMob status and ad events to Firestore database for remote diagnostics (Non-blocking)
  */
-export const logAdMobEventToFirebase = async (eventName: string, details: any = {}) => {
-  try {
-    const time = Date.now();
-    const userId = auth.currentUser?.uid || 'guest_device';
-    const logId = `admob_${time}_${Math.random().toString(36).substring(2, 6)}`;
-    await setDoc(doc(db, 'admob_logs', logId), {
-      eventName,
-      userId,
-      appId: ADMOB_CONFIG.APP_ID,
-      rewardedAdUnitId: ADMOB_CONFIG.REWARDED_AD_ID,
-      topBannerUnitId: ADMOB_CONFIG.TOP_BANNER_ID,
-      bottomBannerUnitId: ADMOB_CONFIG.BOTTOM_BANNER_ID,
-      publisherId: 'pub-1284515268865249',
-      details,
-      timestamp: new Date().toISOString()
-    }, { merge: true });
-    console.log(`[AdMob Firebase Log] ${eventName}:`, details);
-  } catch (err) {
-    console.warn('[AdMob Firebase Log Warning]:', err);
-  }
+export const logAdMobEventToFirebase = (eventName: string, details: any = {}) => {
+  setTimeout(async () => {
+    try {
+      const time = Date.now();
+      const userId = auth.currentUser?.uid || 'guest_device';
+      const logId = `admob_${time}_${Math.random().toString(36).substring(2, 6)}`;
+      await setDoc(doc(db, 'admob_logs', logId), {
+        eventName,
+        userId,
+        appId: ADMOB_CONFIG.APP_ID,
+        rewardedAdUnitId: ADMOB_CONFIG.REWARDED_AD_ID,
+        topBannerUnitId: ADMOB_CONFIG.TOP_BANNER_ID,
+        bottomBannerUnitId: ADMOB_CONFIG.BOTTOM_BANNER_ID,
+        publisherId: 'pub-1284515268865249',
+        details,
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      // Ignore background log errors
+    }
+  }, 50);
 };
 
 // Global state variables for managing AdMob callbacks & async flow

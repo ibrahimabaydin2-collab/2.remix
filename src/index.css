@@ -109,3 +109,28 @@ html, body, #root {
   }
 }
 
+/* GPU Accelerated AdMob Progress Bar Animation (Zero JS Main Thread Cost) */
+@keyframes adProgressAnim {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+.animate-ad-progress {
+  animation: adProgressAnim 15s linear forwards !important;
+  will-change: width;
+}
+
+/* Pause background heavy CSS effects in WebView when full screen native AdMob is active */
+body.ad-active .animate-ping,
+body.ad-active .animate-bounce,
+body.ad-active .animate-spin {
+  animation-play-state: paused !important;
+}
+
+body.ad-active .backdrop-blur-md,
+body.ad-active .backdrop-blur-xl,
+body.ad-active .backdrop-blur-2xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+

@@ -395,7 +395,7 @@ public class MainActivity extends BridgeActivity {
                                 @Override
                                 public void onAdDismissedFullScreenContent() {
                                     mRewardedAd = null;
-                                    loadRewardedAd();
+                                    mHandler.postDelayed(() -> loadRewardedAd(), 1000);
                                     mHandler.post(() -> {
                                         if (mWebView != null) {
                                             mWebView.evaluateJavascript("if (window.onAndroidAdDismissed) { window.onAndroidAdDismissed(); }", null);
@@ -406,7 +406,7 @@ public class MainActivity extends BridgeActivity {
                                 @Override
                                 public void onAdFailedToShowFullScreenContent(com.google.android.gms.ads.AdError adError) {
                                     mRewardedAd = null;
-                                    loadRewardedAd();
+                                    mHandler.postDelayed(() -> loadRewardedAd(), 1000);
                                     mHandler.post(() -> {
                                         if (mWebView != null) {
                                             mWebView.evaluateJavascript("if (window.onAndroidAdFailedToShow) { window.onAndroidAdFailedToShow('" + adError.getMessage().replace("'", "\\'") + "'); }", null);

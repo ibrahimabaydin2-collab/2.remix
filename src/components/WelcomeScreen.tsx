@@ -135,31 +135,6 @@ export default function WelcomeScreen({
   const [isWatchingAd, setIsWatchingAd] = useState<boolean>(false);
   const [showAdSuccess, setShowAdSuccess] = useState<boolean>(false);
   const [isAdLoading, setIsAdLoading] = useState<boolean>(false);
-  const [adProgress, setAdProgress] = useState<number>(0);
-
-  useEffect(() => {
-    let interval: any = null;
-    if (isWatchingAd) {
-      setAdProgress(0);
-      const startTime = Date.now();
-      const estimatedDuration = 15000;
-      interval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const pct = Math.min(100, Math.floor((elapsed / estimatedDuration) * 100));
-        setAdProgress(pct);
-        if (pct >= 100) {
-          clearInterval(interval);
-        }
-      }, 100);
-    } else if (isAdLoading) {
-      setAdProgress(35);
-    } else {
-      setAdProgress(0);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isWatchingAd, isAdLoading]);
   
   // Daily Puzzle reset countdown timer state
   const [timeLeftToReset, setTimeLeftToReset] = useState<string>('');
@@ -356,13 +331,11 @@ export default function WelcomeScreen({
 
   const startRewardedAdWatch = () => {
     setIsAdLoading(true);
-    setAdProgress(15);
     triggerRewardedAdWatch(
       async () => {
         setIsAdLoading(false);
         setIsWatchingAd(false);
         setShowAdSuccess(true);
-        setAdProgress(100);
         if (onRewardRef.current) {
           await onRewardRef.current();
         }
@@ -374,7 +347,6 @@ export default function WelcomeScreen({
       (reason) => {
         setIsAdLoading(false);
         setIsWatchingAd(false);
-        setAdProgress(0);
         if (showToast) showToast(reason, 'error');
         else alert(reason);
       }
@@ -1380,12 +1352,13 @@ export default function WelcomeScreen({
             }`}
             title="Reklam izleyerek 10 altın kazan"
           >
-            {/* Sarı İlerleme Çubuğu (Yellow Progress Bar) */}
+            {/* Sarı İlerleme Çubuğu (Yellow Progress Bar) - GPU Accelerated CSS Animation */}
             {(isAdLoading || isWatchingAd) && (
               <div className="absolute inset-0 bg-amber-950/40 overflow-hidden pointer-events-none">
                 <div
-                  className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 transition-all duration-150 ease-linear shadow-[0_0_12px_rgba(245,158,11,0.8)]"
-                  style={{ width: `${isAdLoading ? 40 : Math.max(8, adProgress)}%` }}
+                  className={`h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.8)] ${
+                    isWatchingAd ? "animate-ad-progress" : "w-1/3 animate-pulse"
+                  }`}
                 />
               </div>
             )}
@@ -1398,7 +1371,7 @@ export default function WelcomeScreen({
                 <span className={`block font-black text-[10px] leading-tight ${
                   isWatchingAd || isAdLoading ? "text-white font-mono drop-shadow-sm" : "text-amber-900/80"
                 }`}>
-                  {isAdLoading ? "REKLAM HAZIRLANIYOR..." : isWatchingAd ? `REKLAM OYNATILIYOR (%${adProgress})` : "İZLE KAZAN"}
+                  {isAdLoading ? "REKLAM HAZIRLANIYOR..." : isWatchingAd ? "REKLAM OYNATILIYOR..." : "İZLE KAZAN"}
                 </span>
                 {isAdLoading && (
                   <span className="block text-[8px] font-mono text-amber-200/90 leading-none mt-0.5">
