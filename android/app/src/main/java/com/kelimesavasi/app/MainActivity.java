@@ -289,14 +289,10 @@ public class MainActivity extends BridgeActivity {
             mAdViewBottom.pause();
         }
         
-        // Remove all callbacks from our activity's handler to release CPU and Render Thread completely
-        mHandler.removeCallbacksAndMessages(null);
-        
-        // Pause WebView JS execution, CSS transitions, and Web Audio context
+        // Pause WebView JS execution
         if (mWebView != null) {
             try {
                 mWebView.onPause();
-                mWebView.pauseTimers();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -306,12 +302,9 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onStop() {
-        mHandler.removeCallbacksAndMessages(null);
-        // Ensure web view is paused when the activity is stopped
         if (mWebView != null) {
             try {
                 mWebView.onPause();
-                mWebView.pauseTimers();
             } catch (Exception e) {
                 e.printStackTrace();
             }
