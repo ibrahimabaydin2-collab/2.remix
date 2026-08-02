@@ -21,6 +21,7 @@ public class MainActivity extends BridgeActivity {
     private boolean mAdsInitialized = false;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private com.google.android.gms.ads.rewarded.RewardedAd mRewardedAd;
+    private String mRewardedAdUnitId = "ca-app-pub-1284515268865249/8781794522";
     private boolean mIsAdLoading = false;
 
     @Override
@@ -196,12 +197,27 @@ public class MainActivity extends BridgeActivity {
                 }
 
                 @android.webkit.JavascriptInterface
+                public void setRewardedAdUnitId(String unitId) {
+                    if (unitId != null && !unitId.trim().isEmpty()) {
+                        mRewardedAdUnitId = unitId.trim();
+                    }
+                }
+
+                @android.webkit.JavascriptInterface
                 public void showRewardedAd() {
                     MainActivity.this.showRewardedAd();
                 }
 
                 @android.webkit.JavascriptInterface
                 public void loadRewardedAd() {
+                    MainActivity.this.loadRewardedAd();
+                }
+
+                @android.webkit.JavascriptInterface
+                public void loadRewardedAd(String unitId) {
+                    if (unitId != null && !unitId.trim().isEmpty()) {
+                        mRewardedAdUnitId = unitId.trim();
+                    }
                     MainActivity.this.loadRewardedAd();
                 }
 
@@ -358,7 +374,7 @@ public class MainActivity extends BridgeActivity {
                 AdRequest adRequest = new AdRequest.Builder().build();
                 com.google.android.gms.ads.rewarded.RewardedAd.load(
                     MainActivity.this, 
-                    "ca-app-pub-1284515268865249/8945496387",
+                    mRewardedAdUnitId,
                     adRequest, 
                     new com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
                         @Override
