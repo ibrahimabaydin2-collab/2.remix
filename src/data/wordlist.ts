@@ -17,27 +17,27 @@ import { WORDS_8 } from './libraries/words8';
 
 import { EASY_WORDS_LEVEL_1 } from './libraries/easy1';
 
-export const words_3: string[] = Array.from(new Set([...(populerKelimeler[3] || []), ...POPULAR_3, ...WORDS_3]))
+export const words_3: string[] = Array.from(new Set([...(populerKelimeler[3] || []), ...POPULAR_3, ...(EASY_WORDS_LEVEL_1[3] || [])]))
   .map(w => turkishUpper(w.trim()))
   .filter(w => w.length === 3);
 
-export const words_4: string[] = Array.from(new Set([...(populerKelimeler[4] || []), ...POPULAR_4, ...WORDS_4]))
+export const words_4: string[] = Array.from(new Set([...(populerKelimeler[4] || []), ...POPULAR_4, ...(EASY_WORDS_LEVEL_1[4] || [])]))
   .map(w => turkishUpper(w.trim()))
   .filter(w => w.length === 4);
 
-export const words_5: string[] = Array.from(new Set([...(populerKelimeler[5] || []), ...POPULAR_5, ...WORDS_5]))
+export const words_5: string[] = Array.from(new Set([...(populerKelimeler[5] || []), ...POPULAR_5, ...(EASY_WORDS_LEVEL_1[5] || [])]))
   .map(w => turkishUpper(w.trim()))
   .filter(w => w.length === 5);
 
-export const words_6: string[] = Array.from(new Set([...(populerKelimeler[6] || []), ...POPULAR_6, ...WORDS_6]))
+export const words_6: string[] = Array.from(new Set([...(populerKelimeler[6] || []), ...POPULAR_6, ...(EASY_WORDS_LEVEL_1[6] || [])]))
   .map(w => turkishUpper(w.trim()))
   .filter(w => w.length === 6);
 
-export const words_7: string[] = Array.from(new Set([...(populerKelimeler[7] || []), ...POPULAR_7, ...WORDS_7]))
+export const words_7: string[] = Array.from(new Set([...(populerKelimeler[7] || []), ...POPULAR_7, ...(EASY_WORDS_LEVEL_1[7] || [])]))
   .map(w => turkishUpper(w.trim()))
   .filter(w => w.length === 7);
 
-export const words_8: string[] = Array.from(new Set([...(populerKelimeler[8] || []), ...POPULAR_8, ...WORDS_8]))
+export const words_8: string[] = Array.from(new Set([...(populerKelimeler[8] || []), ...POPULAR_8, ...(EASY_WORDS_LEVEL_1[8] || [])]))
   .map(w => turkishUpper(w.trim()))
   .filter(w => w.length === 8);
 
@@ -60,12 +60,12 @@ export const COMMON_TURKISH_WORDS: { [key: number]: string[] } = {
 };
 
 export const CLEANED_TURKISH_WORDS: { [key: number]: string[] } = {
-  3: WORDS_3.map(w => turkishLower(w)),
-  4: WORDS_4.map(w => turkishLower(w)),
-  5: WORDS_5.map(w => turkishLower(w)),
-  6: WORDS_6.map(w => turkishLower(w)),
-  7: WORDS_7.map(w => turkishLower(w)),
-  8: WORDS_8.map(w => turkishLower(w)),
+  3: Array.from(new Set([...POPULAR_3, ...WORDS_3])).map(w => turkishLower(w.trim())),
+  4: Array.from(new Set([...POPULAR_4, ...WORDS_4])).map(w => turkishLower(w.trim())),
+  5: Array.from(new Set([...POPULAR_5, ...WORDS_5])).map(w => turkishLower(w.trim())),
+  6: Array.from(new Set([...POPULAR_6, ...WORDS_6])).map(w => turkishLower(w.trim())),
+  7: Array.from(new Set([...POPULAR_7, ...WORDS_7])).map(w => turkishLower(w.trim())),
+  8: Array.from(new Set([...POPULAR_8, ...WORDS_8])).map(w => turkishLower(w.trim())),
 };
 
 const ABSOLUTE_FALLBACK_WORDS: { [key: number]: string } = {
@@ -165,14 +165,31 @@ export function isWordInCuratedList(word: string, length: number): boolean {
   if (!word) return false;
   const targetLength = Number(length) || word.trim().length;
   const normalized = turkishLower(word.trim());
+  const upper = turkishUpper(word.trim());
   
   if (normalized.length !== targetLength) return false;
 
+  // 1. CLEANED_TURKISH_WORDS
   const list = CLEANED_TURKISH_WORDS[targetLength] || [];
   if (list.includes(normalized)) return true;
 
-  const commonList = COMMON_TURKISH_WORDS[targetLength] || [];
-  return commonList.some(w => turkishLower(w.trim()) === normalized);
+  // 2. COMMON_TURKISH_WORDS / LIVE_MODE_WORD_POOLS
+  const commonList = COMMON_TURKISH_WORDS[targetLength] || LIVE_MODE_WORD_POOLS[targetLength] || [];
+  if (commonList.some(w => turkishLower(w.trim()) === normalized || turkishUpper(w.trim()) === upper)) return true;
+
+  // 3. EASY_WORDS_LEVEL_1
+  const easyList = EASY_WORDS_LEVEL_1[targetLength] || [];
+  if (easyList.some(w => turkishLower(w.trim()) === normalized || turkishUpper(w.trim()) === upper)) return true;
+
+  // 4. populerKelimeler
+  const popList = populerKelimeler[targetLength] || [];
+  if (popList.some(w => turkishLower(w.trim()) === normalized || turkishUpper(w.trim()) === upper)) return true;
+
+  // 5. ABSOLUTE_FALLBACK_WORDS
+  const fb = ABSOLUTE_FALLBACK_WORDS[targetLength];
+  if (fb && (turkishLower(fb.trim()) === normalized || turkishUpper(fb.trim()) === upper)) return true;
+
+  return false;
 }
 
 export function getTodayDateStr(date: Date = new Date()): string {

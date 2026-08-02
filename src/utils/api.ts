@@ -2,7 +2,7 @@
 import { BACKUP_TOKEN } from './tokenBackup';
 import { Capacitor, CapacitorCookies } from '@capacitor/core';
 import { turkishLower, capitalizeFirstLetterTurkish } from './turkish';
-import { COMMON_TURKISH_WORDS } from '../data/wordlist';
+import { COMMON_TURKISH_WORDS, isWordInCuratedList } from '../data/wordlist';
 
 const DEPLOYED_APP_URL = "https://kelime-sava.onrender.com";
 const DEV_APP_URL = "https://kelime-sava.onrender.com";
@@ -358,11 +358,8 @@ export async function validateWordClientSide(word: string, length: number): Prom
     const capitalizedWord = capitalizeFirstLetterTurkish(word);
     console.log(`[Kelime Doğrulama] İşleniyor: "${word}" -> Alt: "${lowerWord}", Baş Harf Büyük: "${capitalizedWord}"`);
 
-    // 2. Önce projedeki yerel kelime listesinden kontrol et.
-    const localList = COMMON_TURKISH_WORDS[length] || [];
-    const foundInLocal = localList.some(w => turkishLower(w).trim() === lowerWord);
-
-    if (foundInLocal) {
+    // 2. Önce projedeki yerel kelime listelerinden kontrol et.
+    if (isWordInCuratedList(word, length)) {
       console.log(`[Kelime Doğrulama] "${lowerWord}" yerel kelime listesinde bulundu.`);
       return {
         valid: true,

@@ -3994,30 +3994,47 @@ export default function App() {
         isValid = true;
         definition = 'Doğrulama dışı serbest oyun modu.';
       } else {
-        // 1. Check local persistent cache
-        const cached = getCachedWord(guess, wordLength);
-        if (cached) {
-          isValid = cached.valid;
-          definition = cached.definition;
+        // MUTLAK DOĞRULAMA: Tahmin, oyunun o el belirlediği hedef kelime (targetWord), hedef kelimeler listesi (targetWords) veya oyun kelime havuzunda (isWordInCuratedList) var mı?
+        const currentTargetWord = turkishUpper(
+          (activeMatch?.targetWord || activeMatch?.correctWord || activeMatchRef.current?.targetWord || activeMatchRef.current?.correctWord || targetWord || '').trim()
+        );
+        const isTargetMatch = currentTargetWord ? guess === currentTargetWord : false;
+        const isTargetWordsMatch = Array.isArray(targetWords) && targetWords.some(tw => turkishUpper(tw.trim()) === guess);
+        const isCurated = isWordInCuratedList(guess, wordLength);
+
+        if (isTargetMatch || isTargetWordsMatch || isCurated) {
+          isValid = true;
+          definition = (isTargetMatch || isTargetWordsMatch)
+            ? 'Günün/turun hedef cevap kelimesi.'
+            : 'Oyun sözlüğünde doğrulandı.';
+          // Eski hatalı önbellek verisini doğrudan doğru (valid: true) olarak güncelle
+          setCachedWord(guess, wordLength, { valid: true, definition });
         } else {
-          // 2. Local heuristic check first (linguistics)
-          const linguisticCheck = validateTurkishLinguistics(guess, wordLength);
-          if (!linguisticCheck.valid) {
-            isValid = false;
-            definition = linguisticCheck.reason;
-            setCachedWord(guess, wordLength, { valid: false, definition: linguisticCheck.reason });
+          // 1. Check local persistent cache
+          const cached = getCachedWord(guess, wordLength);
+          if (cached) {
+            isValid = cached.valid;
+            definition = cached.definition;
           } else {
-            // 3. Robust client-side validation (Local List + Wikisözlük fallback)
-            try {
-              const res = await validateWordClientSide(guess, wordLength);
-              isValid = res.valid;
-              definition = res.definition;
-              setCachedWord(guess, wordLength, { valid: res.valid, definition: res.definition });
-            } catch (validationErr: any) {
-              console.error('[Kelime Doğrulama] Ön yüz doğrulaması başarısız oldu:', validationErr);
-              // Fallback if everything is broken - let the user play
-              isValid = true;
-              definition = 'Kelime anlamı şu anda doğrulanamadı ancak kelime geçerlidir.';
+            // 2. Local heuristic check first (linguistics)
+            const linguisticCheck = validateTurkishLinguistics(guess, wordLength);
+            if (!linguisticCheck.valid) {
+              isValid = false;
+              definition = linguisticCheck.reason;
+              setCachedWord(guess, wordLength, { valid: false, definition: linguisticCheck.reason });
+            } else {
+              // 3. Robust client-side validation (Local List + Wikisözlük fallback)
+              try {
+                const res = await validateWordClientSide(guess, wordLength);
+                isValid = res.valid;
+                definition = res.definition;
+                setCachedWord(guess, wordLength, { valid: res.valid, definition: res.definition });
+              } catch (validationErr: any) {
+                console.error('[Kelime Doğrulama] Ön yüz doğrulaması başarısız oldu:', validationErr);
+                // Fallback if everything is broken - let the user play
+                isValid = true;
+                definition = 'Kelime anlamı şu anda doğrulanamadı ancak kelime geçerlidir.';
+              }
             }
           }
         }
