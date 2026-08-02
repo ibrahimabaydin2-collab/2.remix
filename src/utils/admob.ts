@@ -3,6 +3,7 @@
 
 import { doc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { suspendAudioContext, resumeAudioContext } from './soundEffects';
 
 export const ADMOB_CONFIG = {
   // AdMob Application ID
@@ -89,6 +90,14 @@ export const cleanupAdState = () => {
 
   hideLoadingOverlay();
 
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('ad-active');
+  }
+
+  try {
+    resumeAudioContext();
+  } catch (e) {}
+
   try {
     (window as any).AndroidBridge?.preventAdLayoutLoops?.();
   } catch (e) {}
@@ -163,6 +172,35 @@ export const initGlobalAdMobListeners = () => {
   (window as any).onRewardedAdRewarded = handleRewarded;
   (window as any).onAdRewarded = handleRewarded;
   (window as any).onUserEarnedReward = handleRewarded;
+
+  // 1.5. Native FullScreenContentCallback onAdShowedFullScreenContent event
+  const handleShowed = () => {
+    console.log('[AdMob] Native event: AdShowed (Video started playing)');
+    if (adLoadingSafetyTimer) {
+      clearTimeout(adLoadingSafetyTimer);
+      adLoadingSafetyTimer = null;
+    }
+    (window as any).isWatchingAd = true;
+    (window as any).isAdLoading = false;
+
+    if (typeof document !== 'undefined') {
+      document.body.classList.add('ad-active');
+    }
+    try {
+      suspendAudioContext();
+    } catch (e) {}
+
+    hideLoadingOverlay();
+
+    if (activeStartCallback) {
+      activeStartCallback();
+    }
+    logAdMobEventToFirebase('on_ad_showed', { status: 'video_playing' });
+  };
+
+  (window as any).onAndroidAdShowed = handleShowed;
+  (window as any).onRewardedAdShowed = handleShowed;
+  (window as any).onAdShowed = handleShowed;
 
   // 2. Native FullScreenContentCallback onAdDismissedFullScreenContent event
   const handleDismissed = async () => {
