@@ -17,6 +17,7 @@ import {
   checkUsernameExists,
   createOrMergeProfile,
   fetchUserProfileByDeviceId,
+  deleteUserProfile,
   uploadAvatarToStorage
 } from '../lib/firebase';
 import UserAvatar from './UserAvatar';
@@ -477,7 +478,11 @@ export default function AuthScreen({ onAuthComplete }: AuthScreenProps) {
         } catch (e) {}
 
         // Non-blocking save to Firestore
-        saveUserProfileToFirestore(mergedProfile).catch((err) => {
+        saveUserProfileToFirestore(mergedProfile).then(() => {
+          if (deviceProfile?.id && deviceProfile.id !== firebaseUser.uid) {
+            deleteUserProfile(deviceProfile.id, true).catch(() => {});
+          }
+        }).catch((err) => {
           console.warn('Firestore guest profile save warning:', err);
         });
 

@@ -1920,6 +1920,11 @@ export default function App() {
                 // Persist the consolidated profile to Firestore doc
                 await saveUserProfileToFirestore(finalProfile);
 
+                // Clean up old document if deviceProfile had a different UID
+                if (deviceProfile?.id && deviceProfile.id !== user.uid) {
+                  deleteUserProfile(deviceProfile.id, true).catch(() => {});
+                }
+
               } catch (syncErr) {
                 console.warn('Profile sync warning:', syncErr);
               }

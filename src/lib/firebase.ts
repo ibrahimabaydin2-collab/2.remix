@@ -543,7 +543,10 @@ export async function fetchUserProfileByDeviceId(deviceId: string): Promise<User
     ]) as any;
 
     if (querySnapshot && !querySnapshot.empty) {
-      const profiles = querySnapshot.docs.map((docSnap: any) => docSnap.data() as UserProfile);
+      const profiles = querySnapshot.docs.map((docSnap: any) => ({
+        ...(docSnap.data() as UserProfile),
+        id: docSnap.id
+      }));
       if (profiles.length === 1) return profiles[0];
       // Merge matching profiles so highest progress/stats is returned
       let bestProfile: UserProfile = profiles[0];
@@ -578,11 +581,60 @@ export async function deleteUserProfile(uid: string, force = false): Promise<voi
 }
 
 /**
- * Cleans up duplicate / ghost user profile documents for the same deviceId in Firestore
+ * Cleans up duplicate / ghost user profile documents for the same deviceId or username in Firestore
  */
-export async function cleanupGhostUserProfiles(deviceId: string, currentUid: string): Promise<void> {
-  // Safe no-op: Do not delete documents from Firestore automatically to preserve user profiles
-  return;
+export async function cleanupGhostUserProfiles(deviceId: string, currentUid: string, username?: string): Promise<void> {
+  if (!currentUid) return;
+  try {
+    const usersCollection = collection(db, 'users');
+    const deletePromises: Promise<any>[] = [];
+    const deletedIds = new Set<string>();
+
+    // 1. Cleanup by deviceId
+    if (deviceId) {
+      const qDevice = query(usersCollection, where('deviceId', '==', deviceId));
+      const deviceSnap = await getDocs(qDevice);
+      if (!deviceSnap.empty) {
+        deviceSnap.docs.forEach((docSnap) => {
+          if (docSnap.id !== currentUid && !deletedIds.has(docSnap.id)) {
+            deletedIds.add(docSnap.id);
+            console.log(`[Ghost Cleanup] Deleting duplicate user profile doc: ${docSnap.id} (keeping currentUid: ${currentUid})`);
+            deletePromises.push(deleteDoc(doc(db, 'users', docSnap.id)).catch(() => {}));
+            deletePromises.push(deleteDoc(doc(db, 'users', docSnap.id, 'stats', 'summary')).catch(() => {}));
+          }
+        });
+      }
+    }
+
+    // 2. Cleanup by username/name_lowercase if provided
+    if (username && username.trim()) {
+      const cleanName = username.trim();
+      const termLower = cleanName.toLowerCase();
+      const qName = query(usersCollection, where('name_lowercase', '==', termLower));
+      const nameSnap = await getDocs(qName);
+      if (!nameSnap.empty) {
+        nameSnap.docs.forEach((docSnap) => {
+          if (docSnap.id !== currentUid && !deletedIds.has(docSnap.id)) {
+            const data = docSnap.data();
+            // Delete if matching deviceId OR if it's an old duplicate doc
+            if (data.deviceId === deviceId || !data.deviceId) {
+              deletedIds.add(docSnap.id);
+              console.log(`[Ghost Cleanup] Deleting duplicate username doc: ${docSnap.id} (keeping currentUid: ${currentUid})`);
+              deletePromises.push(deleteDoc(doc(db, 'users', docSnap.id)).catch(() => {}));
+              deletePromises.push(deleteDoc(doc(db, 'users', docSnap.id, 'stats', 'summary')).catch(() => {}));
+            }
+          }
+        });
+      }
+    }
+
+    if (deletePromises.length > 0) {
+      await Promise.all(deletePromises);
+      console.log(`[Ghost Cleanup] Successfully removed ${deletedIds.size} ghost/duplicate user document(s).`);
+    }
+  } catch (error) {
+    console.warn('[Ghost Cleanup] Warning while cleaning up ghost user profiles:', error);
+  }
 }
 
 /**
@@ -1044,9 +1096,9 @@ export async function saveUserProfileToFirestore(profile: UserProfile): Promise<
       console.warn('Non-blocking syncUserProfileAcrossFirestore error:', err);
     });
 
-    // Clean up any old obsolete ghost documents belonging to the same deviceId
-    if (effectiveProfile.deviceId) {
-      cleanupGhostUserProfiles(effectiveProfile.deviceId, effectiveProfile.id).catch(() => {});
+    // Clean up any old obsolete ghost documents belonging to the same deviceId or username
+    if (effectiveProfile.deviceId || cleanName) {
+      cleanupGhostUserProfiles(effectiveProfile.deviceId || '', effectiveProfile.id, cleanName).catch(() => {});
     }
   } catch (error) {
     console.error('Failed to save user profile:', error);
@@ -1616,7 +1668,28 @@ export async function searchUserByName(name: string): Promise<UserProfile[]> {
       // Ignore direct ID fetch errors
     }
 
-    const allUsers = Array.from(resultMap.values());
+    const rawUsers = Array.from(resultMap.values());
+
+    // Deduplicate profiles by deviceId or name_lowercase so duplicate clone documents never show in search
+    const uniqueMap = new Map<string, UserProfile>();
+    rawUsers.forEach((user) => {
+      const devId = user.deviceId || '';
+      const normName = (user.name || (user as any).username || '').trim().toLowerCase();
+      const groupKey = devId ? `dev_${devId}` : (normName ? `name_${normName}` : user.id);
+
+      if (!uniqueMap.has(groupKey)) {
+        uniqueMap.set(groupKey, user);
+      } else {
+        const existing = uniqueMap.get(groupKey)!;
+        const existingTime = new Date((existing as any).lastActive || (existing as any).lastUpdated || 0).getTime();
+        const currentTime = new Date((user as any).lastActive || (user as any).lastUpdated || 0).getTime();
+        if (currentTime > existingTime || (user.dailyScore || 0) > (existing.dailyScore || 0)) {
+          uniqueMap.set(groupKey, user);
+        }
+      }
+    });
+
+    const allUsers = Array.from(uniqueMap.values());
 
     // Filter client-side: case-insensitive/Turkish-aware match across name, username, displayName, or email
     const filtered = allUsers.filter(user => {
